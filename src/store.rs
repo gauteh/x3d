@@ -2,8 +2,40 @@
 
 use crate::error::{Error, Result};
 use std::io::{Read, Seek, SeekFrom};
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+use ureq::Agent;
+use ureq::config::Config;
+use ureq::unversioned::resolver::{DefaultResolver, ResolvedSocketAddrs, Resolver};
+use ureq::unversioned::transport::{DefaultConnector, NextTimeout};
+use ureq::http::Uri;
+
+/// ureq resolves the host for every request, even when it reuses a pooled connection. On a
+/// stub resolver that costs ~12 ms (uncached AAAA lookup) per request, several times the cost of
+/// the request itself, so remember lookups for a while.
+#[derive(Debug, Default)]
+struct CachingResolver {
+    inner: DefaultResolver,
+    cache: Mutex<HashMap<String, (Instant, ResolvedSocketAddrs)>>,
+}
+
+const DNS_TTL: Duration = Duration::from_secs(60);
+
+impl Resolver for CachingResolver {
+    fn resolve(&self, uri: &Uri, config: &Config, timeout: NextTimeout) -> std::result::Result<ResolvedSocketAddrs, ureq::Error> {
+        let key = uri.authority().map(|a| a.to_string()).unwrap_or_default();
+        if let Some((at, addrs)) = self.cache.lock().unwrap().get(&key) {
+            if at.elapsed() < DNS_TTL {
+                return Ok(addrs.clone());
+            }
+        }
+        let addrs = self.inner.resolve(uri, config, timeout)?;
+        self.cache.lock().unwrap().insert(key, (Instant::now(), addrs.clone()));
+        Ok(addrs)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ByteRange {
@@ -26,12 +58,12 @@ impl Store {
     /// `root` is an `http(s)://` URL, a `file://` URL or a plain path.
     pub fn open(root: &str) -> Store {
         if root.starts_with("http://") || root.starts_with("https://") {
-            let agent: ureq::Agent = ureq::Agent::config_builder()
+            let config = Agent::config_builder()
                 .http_status_as_error(false)
                 .timeout_global(Some(Duration::from_secs(60)))
                 .max_idle_connections_per_host(32)
-                .build()
-                .into();
+                .build();
+            let agent = Agent::with_parts(config, DefaultConnector::default(), CachingResolver::default());
             Store::Http { base: root.trim_end_matches('/').to_string(), agent }
         } else {
             let p = root.strip_prefix("file://").unwrap_or(root);
