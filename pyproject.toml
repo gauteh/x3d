@@ -1,0 +1,27 @@
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name = "x3d"
+version = "0.1.0"
+description = "xarray backend for the waves.met.no Zarr data store"
+requires-python = ">=3.10"
+dependencies = ["numpy", "xarray"]
+
+[project.entry-points."xarray.backends"]
+x3d = "x3d.backend:X3DBackendEntrypoint"
+
+[tool.maturin]
+python-source = "python"
+module-name = "x3d._core"
+features = ["extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# benchmarks run once as plain tests; --benchmark-enable measures, --benchmark-only selects them
+addopts = "--benchmark-disable"
+markers = [
+  "rgw: needs network access to the public RGW bucket (deselect with -m 'not rgw')",
+  "store: needs a local wave-world store (X3D_TEST_STORE)",
+]
