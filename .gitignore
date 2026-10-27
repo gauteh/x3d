@@ -3,3 +3,5 @@ __pycache__/
 *.so
 *.egg-info/
 .pytest_cache/
+/.cargo/
+/.venv/

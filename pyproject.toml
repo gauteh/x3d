@@ -9,6 +9,10 @@ description = "xarray backend for the waves.met.no Zarr data store"
 requires-python = ">=3.10"
 dependencies = ["numpy", "xarray"]
 
+[project.optional-dependencies]
+test = ["pytest", "pytest-benchmark", "zarr>=3", "dask"]
+bench = ["netCDF4", "matplotlib"]
+
 [project.entry-points."xarray.backends"]
 x3d = "x3d.backend:X3DBackendEntrypoint"
 
