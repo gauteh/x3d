@@ -29,9 +29,18 @@ OUT = Path(os.environ.get("X3D_BENCH_OUT", Path(__file__).parents[1] / "docs"))
 ROUNDS = int(os.environ.get("X3D_BENCH_ROUNDS", 5))
 
 BOX = dict(rlat=slice(400, 500), rlon=slice(200, 300))
+RNG = np.random.default_rng(int(os.environ.get("X3D_BENCH_SEED", 0)))
+
+
+def random_series(ds):
+    """A different point every round, so server-side caches of the fixed point do not help."""
+    return ds.hs.isel(rlat=int(RNG.integers(ds.sizes["rlat"])), rlon=int(RNG.integers(ds.sizes["rlon"]))).values
+
+
 SCENARIOS = {
     "open": None,
     "series: 1 point, all steps": lambda ds: ds.hs.isel(rlat=500, rlon=300).values,
+    "series: random point, all steps": random_series,
     "field: 1 step, full grid": lambda ds: ds.hs.isel(time=10).values,
     "box: 24 steps, 100x100": lambda ds: ds.hs.isel(time=slice(0, 24), **BOX).values,
     "fields: 6 steps, full grid": lambda ds: ds.hs.isel(time=slice(0, 6)).values,

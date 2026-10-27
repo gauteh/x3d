@@ -53,7 +53,7 @@ Tests (`tests/`):
 - `-m rgw`: integration against the public RGW bucket (`X3D_RGW_URL` overrides; skipped if unreachable).
 - `-m store`: against the local wave-world store (`X3D_TEST_STORE`, default `../wave-world/store/ww3_4km`).
 - `tests/test_benchmark.py` (marked `rgw`): pytest-benchmark of THREDDS OPeNDAP (`X3D_THREDDS_URL`) vs x3d on RGW for
-  the same time window (open, point series, field, box, several fields), cold reads. Benchmarking is disabled by default
+  the same time window (open, point series (fixed and random point), field, box, several fields), cold reads. Benchmarking is disabled by default
   (`addopts = --benchmark-disable`: each case runs once as a plain test); `--benchmark-enable` measures,
   `--benchmark-only` runs only the benchmarks, and the bar plot goes to `docs/` (`X3D_BENCH_OUT`; rounds via
   `X3D_BENCH_ROUNDS`). A separate test checks both sources return the same numbers.
