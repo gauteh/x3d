@@ -14,8 +14,11 @@ default:
       - .cargo/registry
       - target
 
+# python3-dev: libpython to link against (cargo test links the pyo3 crate normally)
+.apt: &apt
+  - apt-get update -qq && apt-get install -y -qq python3-venv python3-dev >/dev/null
+
 .setup: &setup
-  - apt-get update -qq && apt-get install -y -qq python3-venv >/dev/null
   - python3 -m venv .venv && . .venv/bin/activate
   - pip install -q -e ".[test]"   # builds the Rust extension via maturin
 
@@ -23,6 +26,7 @@ default:
 test:
   stage: test
   script:
+    - *apt
     - cargo test
     - *setup
     - pytest -m "not rgw and not store" -v
@@ -36,6 +40,7 @@ test-rgw:
     - when: manual
       allow_failure: true
   script:
+    - *apt
     - *setup
     - pip install -q ".[bench]"
     - pytest -m rgw -v
