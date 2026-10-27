@@ -1,6 +1,9 @@
 stages:
   - test
 
+variables:
+  CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+
 default:
   image: rust:1-bookworm
   tags:
@@ -10,8 +13,6 @@ default:
     paths:
       - .cargo/registry
       - target
-  variables:
-    CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
 
 .setup: &setup
   - apt-get update -qq && apt-get install -y -qq python3-venv >/dev/null
