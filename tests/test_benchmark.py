@@ -53,7 +53,7 @@ results: dict[tuple[str, str], float] = {}
 @pytest.fixture(scope="module")
 def window(rgw_url):
     """(number of common steps, index of the first in the THREDDS aggregate); the store starts at its first."""
-    x = xr.open_dataset(f"x3d+{rgw_url}", engine="x3d")
+    x = xr.open_dataset(f"x3d+{rgw_url}")
     t = open_thredds()
     seconds = (x.time.values - np.datetime64("1970-01-01")) / np.timedelta64(1, "s")
     i0 = int(np.searchsorted(t.time.values, seconds[0]))
@@ -79,7 +79,7 @@ def open_thredds():
 def open_backend(name: str, window) -> xr.Dataset:
     n, i0 = window
     if name == "x3d":
-        return xr.open_dataset(f"x3d+{RGW_URL}", engine="x3d")[["hs"]].isel(time=slice(0, n))
+        return xr.open_dataset(f"x3d+{RGW_URL}")[["hs"]].isel(time=slice(0, n))
     ds = open_thredds()[["hs"]]
     return ds.isel(time=slice(i0, i0 + n))
 

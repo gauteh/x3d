@@ -5,16 +5,17 @@ xarray backend for the waves.met.no Zarr data store (see `../wave-world`), with 
 
 ```python
 import xarray as xr
-ds = xr.open_dataset("x3d+https://rgw.met.no/<project>:waves-ww3/ww3_4km", engine="x3d")  # engine implied by the prefix
+ds = xr.open_dataset("x3d+https://rgw.met.no/<project>:waves-ww3/ww3_4km")  # the x3d+ prefix selects the engine
 ds.hs.isel(rlat=500, rlon=300).values   # point series: served from ts.zarr
 ds.hs.isel(time=10).values              # field: served from map.zarr
-xr.open_dataset(url, engine="x3d", layout="ov")   # coarse 1/4 grid (block means), lossy
+xr.open_dataset("x3d+https://.../ww3_4km", layout="ov")   # coarse 1/4 grid (block means), lossy
 ```
 
 Opening reads `latest.json`, `dataset.json` and the consolidated metadata of `ts.zarr` / `map.zarr`
 (a few small requests); data is lazy. `data.met.no/ww3_4km` will work the same once the store is served there.
 
 URL: `x3d+<http(s)|file URL or path>[?run=<id>&layout=auto|ts|map|ov]` (kwargs `run=`, `layout=` win).
+The `x3d+` prefix selects the engine; without it (plain path or URL) pass `engine="x3d"`.
 
 - **Layout choice** (`layout="auto"`): per read, the Rust core plans requests and bytes for `ts` and `map`
   from the chunk geometry and `x3d.layout.choose` picks the cheapest. Both are exact, so the choice is invisible.

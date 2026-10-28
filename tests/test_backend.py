@@ -31,7 +31,7 @@ def backing(da) -> X3DArray:
 
 
 def open_local(store_dir, **kw):
-    return xr.open_dataset(f"x3d+file://{store_dir}", engine="x3d", **kw)
+    return xr.open_dataset(f"x3d+file://{store_dir}", **kw)
 
 
 def expected(name, sel):
@@ -123,6 +123,15 @@ def test_overview_is_coarse_grid_with_block_mean_coordinates(store_dir):
     np.testing.assert_array_equal(ds.hs.isel(time=2).values, expected("hs", dict(time=2))[::OVF, ::OVF])
 
 
+def test_engine_guessed_from_prefix(store_dir):
+    """No engine= needed for x3d+ URLs; plain paths still need it."""
+    a = xr.open_dataset(f"x3d+file://{store_dir}")
+    b = xr.open_dataset(f"x3d+file://{store_dir}?layout=ts")
+    assert a.encoding["source"] and b.attrs["x3d_layout"] == "ts"
+    with pytest.raises(ValueError):
+        xr.open_dataset(str(store_dir))
+
+
 def test_bad_layout_rejected(store_dir):
     with pytest.raises(ValueError, match="layout"):
         open_local(store_dir, layout="nope")
@@ -130,7 +139,7 @@ def test_bad_layout_rejected(store_dir):
 
 def test_missing_run_and_store(tmp_path, store_dir):
     with pytest.raises(FileNotFoundError):
-        xr.open_dataset(f"x3d+file://{tmp_path}", engine="x3d")
+        xr.open_dataset(f"x3d+file://{tmp_path}")
     with pytest.raises(FileNotFoundError):
         open_local(store_dir, run="19990101T000000Z")
 
@@ -162,7 +171,7 @@ def test_debug_log_reports_layout(store_dir, caplog):
 
 def test_http_range_reads_and_request_economy(http_store, store_dir):
     base, log = http_store
-    ds = xr.open_dataset(f"x3d+{base}", engine="x3d")
+    ds = xr.open_dataset(f"x3d+{base}")
     opened = list(log)
     # latest.json, dataset.json and the consolidated metadata of the two exact layouts, plus the small
     # index coordinates (indexes are loaded eagerly by xarray); no data chunks
@@ -188,18 +197,18 @@ def test_http_range_reads_and_request_economy(http_store, store_dir):
 
 def test_http_missing_shards_read_as_fill(http_store):
     base, _ = http_store
-    ds = xr.open_dataset(f"x3d+{base}", engine="x3d", layout="map")
+    ds = xr.open_dataset(f"x3d+{base}", layout="map")
     assert np.isnan(ds.hs.isel(rlat=slice(0, 16), rlon=slice(0, 16)).values).all()
 
 
 @pytest.mark.rgw
 def test_rgw_open_and_layouts_agree(rgw_url):
-    ds = xr.open_dataset(f"x3d+{rgw_url}", engine="x3d")
+    ds = xr.open_dataset(f"x3d+{rgw_url}")
     assert {"hs", "phs0", "phs1"} <= set(ds.data_vars)
     assert ds.sizes["time"] > 1
     assert ds.time.diff("time").dt.total_seconds().min() > 0
-    ts = xr.open_dataset(f"x3d+{rgw_url}?run={ds.attrs['x3d_run']}&layout=ts", engine="x3d")
-    mp = xr.open_dataset(f"x3d+{rgw_url}?run={ds.attrs['x3d_run']}&layout=map", engine="x3d")
+    ts = xr.open_dataset(f"x3d+{rgw_url}?run={ds.attrs['x3d_run']}&layout=ts")
+    mp = xr.open_dataset(f"x3d+{rgw_url}?run={ds.attrs['x3d_run']}&layout=map")
     box = dict(time=slice(0, 4), rlat=slice(400, 440), rlon=slice(200, 260))
     a = ts.hs.isel(box).values
     np.testing.assert_array_equal(a, mp.hs.isel(box).values)
@@ -211,8 +220,8 @@ def test_rgw_open_and_layouts_agree(rgw_url):
 
 @pytest.mark.rgw
 def test_rgw_overview_is_cheap_and_close_to_full_resolution(rgw_url):
-    ov = xr.open_dataset(f"x3d+{rgw_url}?layout=ov", engine="x3d")
-    full = xr.open_dataset(f"x3d+{rgw_url}", engine="x3d")
+    ov = xr.open_dataset(f"x3d+{rgw_url}?layout=ov")
+    full = xr.open_dataset(f"x3d+{rgw_url}")
     assert ov.sizes["rlat"] * OVF >= full.sizes["rlat"] > (ov.sizes["rlat"] - 1) * OVF
     a, b = ov.hs.isel(time=0).values, full.hs.isel(time=0, rlat=slice(0, None, OVF), rlon=slice(0, None, OVF)).values
     both = np.isfinite(a) & np.isfinite(b)
@@ -221,7 +230,7 @@ def test_rgw_overview_is_cheap_and_close_to_full_resolution(rgw_url):
 
 @pytest.mark.store
 def test_wave_world_store_matches_zarr_python(wave_world_store):
-    ds = xr.open_dataset(f"x3d+file://{wave_world_store}", engine="x3d")
+    ds = xr.open_dataset(f"x3d+file://{wave_world_store}")
     run = ds.attrs["x3d_run"]
     ref = xr.open_zarr(wave_world_store / run / "ts.zarr", consolidated=True)
     for sel in (dict(rlat=500, rlon=300), dict(time=10), dict(time=slice(60, 3, -7), rlat=slice(900, 100, -37), rlon=slice(5, 600, 11))):
