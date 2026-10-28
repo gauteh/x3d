@@ -35,6 +35,9 @@ Regenerate (needs network; overwrites the image, then commit it):
 
     pytest --benchmark-enable --benchmark-only --benchmark-columns=min,median,mean,rounds
 
+The store layout is specified in [docs/format.md](docs/format.md); the producer is
+[x3d-publisher](../x3d-publisher).
+
 ## Develop
 
 Create the conda env from `environment.yml` (Rust, maturin, pytest, xarray, zarr, ...):

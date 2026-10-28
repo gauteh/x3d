@@ -20,8 +20,13 @@
   - source: newest `fc` file on THREDDS (`fou-hi/norkyst800m-1h/NorKyst-800m_ZDEPTHS_his.fc.<date>00.nc`, 97 hourly steps, 902x2602, 16 depths; `an` files are 24 steps); the `fc` file is 21 GB, `an` 5.3 GB. Check which date is newest on THREDDS (the catalog listing looked stale).
   - variables at `depth=0`: `temperature`, `salinity`, `u_eastward`, `v_northward`, `zeta`, `Uwind`, `Vwind`; coordinates `lat`/`lon` (2-D), dims `Y`/`X`.
   - estimated store: ~1 GB per layout, ~2 GB with `ts` + `map` per run (about 5x a ww3 run).
-  - [ ] wave-world `convert.py`: make it model-driven (dims, variables, scales, overview variables, shards, lat/lon names, depth selection, source file lookup); keep the ww3 output unchanged and its tests passing.
+  - [ ] wave-world `convert.py`: (now `../x3d-publisher`, model-driven via TOML; add `norkyst800.toml`) make it model-driven (dims, variables, scales, overview variables, shards, lat/lon names, depth selection, source file lookup); keep the ww3 output unchanged and its tests passing.
   - [ ] pack to int16 while downloading (float32 for the whole run would be ~6 GB).
   - [ ] x3d: stop assuming `rlat`/`rlon`, `latitude`/`longitude` (`GEO_COORDS`) and the ww3 overview grid; test with a NorKyst-like synthetic store.
   - [ ] `../devops/ppi/update-nk800.sh` (and `status-nk800.sh`), modelled on `update-ww3.sh`: bucket `waves-ww3`, prefix `norkyst800`, same credentials and cron setup.
   - [ ] benchmark THREDDS vs x3d for NorKyst, add to the README.
+
+- Data-layer split (see `docs/format.md`, `../x3d-publisher`)
+  - [ ] remove the pipeline from wave-world (`pipeline/{convert,publish,fetch,run.sh}`, `Dockerfile.pipeline`, their tests) once `../devops/ppi/update-ww3.sh` calls `x3d-publisher run ww3_4km` instead of `$WAVE_WORLD/pipeline/run.sh`; `serve.py` (dev server) stays with wave-world or moves to x3d.
+  - [ ] x3d: check `format_version` and read `dims`/layout shapes from the metadata instead of assuming `rlat`/`rlon`.
+  - [ ] publisher CI: build a small store and run x3d's tests against it; Dockerfile/CronJob.
