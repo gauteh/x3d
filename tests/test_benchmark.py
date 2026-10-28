@@ -34,7 +34,9 @@ OUT = Path(os.environ.get("X3D_BENCH_OUT", Path(__file__).parents[1] / "docs"))
 ROUNDS = int(os.environ.get("X3D_BENCH_ROUNDS", 5))
 
 BOX = dict(rlat=slice(400, 500), rlon=slice(200, 300))
-RNG = np.random.default_rng(int(os.environ.get("X3D_BENCH_SEED", 0)))
+# A fresh seed per run: a fixed one would hit the same points on THREDDS every time, and it caches them.
+SEED = int(os.environ.get("X3D_BENCH_SEED", np.random.SeedSequence().entropy % 2**32))
+RNG = np.random.default_rng(SEED)
 
 
 def random_series(ds):
@@ -138,6 +140,8 @@ def plot_at_end():
     ax.set_ylabel("median time (s, log scale)")
     ax.set_xticks(range(len(names)), [n.replace(": ", ":\n") for n in names], fontsize=8)
     ax.set_title("ww3_4km hs: median time per access pattern (labels in ms)")
+    ax.grid(axis="y", which="both", alpha=0.3)
+    ax.set_axisbelow(True)
     ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1.0), fontsize=8)
     fig.tight_layout()
     OUT.mkdir(exist_ok=True)
