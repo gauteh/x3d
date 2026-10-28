@@ -22,3 +22,4 @@ dependencies:
   # ../x3d-publisher: publish to S3, and its tests (mocked S3)
   - boto3
   - moto
+  - s3cmd
