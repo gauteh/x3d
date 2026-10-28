@@ -233,5 +233,10 @@ def test_wave_world_store_matches_zarr_python(wave_world_store):
     ds = xr.open_dataset(f"x3d+file://{wave_world_store}")
     run = ds.attrs["x3d_run"]
     ref = xr.open_zarr(wave_world_store / run / "ts.zarr", consolidated=True)
-    for sel in (dict(rlat=500, rlon=300), dict(time=10), dict(time=slice(60, 3, -7), rlat=slice(900, 100, -37), rlon=slice(5, 600, 11))):
+    nt, ny, nx = ref.hs.shape
+    # picked relative to the grid, so a small synthetic store (x3d-publisher's CI) works as well as the real one
+    for sel in (
+        dict(rlat=ny // 2, rlon=nx // 2), dict(time=nt // 7),
+        dict(time=slice(nt - 12, 3, -7), rlat=slice(ny * 7 // 8, ny // 10, -37), rlon=slice(5, nx * 19 // 20, 11)),
+    ):
         np.testing.assert_allclose(ds.hs.isel(sel).values, ref.hs.isel(sel).values.astype("float32"), rtol=1e-6, equal_nan=True)

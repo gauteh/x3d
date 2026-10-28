@@ -27,6 +27,6 @@
   - [ ] benchmark THREDDS vs x3d for NorKyst, add to the README.
 
 - Data-layer split (see `docs/format.md`, `../x3d-publisher`)
-  - [ ] remove the pipeline from wave-world (`pipeline/{convert,publish,fetch,run.sh}`, `Dockerfile.pipeline`, their tests) once `../devops/ppi/update-ww3.sh` calls `x3d-publisher run ww3_4km` instead of `$WAVE_WORLD/pipeline/run.sh`; `serve.py` (dev server) stays with wave-world or moves to x3d.
+  - [ ] remove the pipeline from wave-world (`pipeline/{convert,publish,fetch,run.sh}`, `Dockerfile.pipeline`, their tests) once `../devops/ppi/update-ww3.sh` calls `x3d-publish run ww3_4km` instead of `$WAVE_WORLD/pipeline/run.sh`; `serve.py` (dev server) stays with wave-world or moves to x3d.
   - [ ] x3d: check `format_version` and read `dims`/layout shapes from the metadata instead of assuming `rlat`/`rlon`.
   - [ ] publisher CI: build a small store and run x3d's tests against it; Dockerfile/CronJob.

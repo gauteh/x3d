@@ -2,11 +2,12 @@
 #   mamba env create -f environment.yml
 #   conda activate x3d
 #   maturin develop --release && pytest
+#   pip install -e ../x3d-publisher --no-deps    # x3d-publish (producer)
 name: x3d
 channels:
   - conda-forge
 dependencies:
-  - python>=3.10
+  - python>=3.11  # x3d-publisher reads TOML with tomllib
   - rust
   - maturin>=1.5,<2
   - numpy
@@ -18,3 +19,6 @@ dependencies:
   # benchmark against THREDDS and plot
   - netcdf4
   - matplotlib
+  # ../x3d-publisher: publish to S3, and its tests (mocked S3)
+  - boto3
+  - moto
