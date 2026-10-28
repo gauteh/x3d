@@ -101,25 +101,28 @@ class X3DArray(BackendArray):
     """A variable stored in one or more layouts of a run. Each read is planned per layout and
     served from the cheapest one (or from the single layout, when only one is requested)."""
 
-    def __init__(self, spec: dict[str, tuple[str, str, str]], shape, dtype):
+    def __init__(self, spec: dict[str, tuple[str, str, str]], shape, dtype, unpack: dict | None = None):
         # spec: layout -> (store location, array path, zarr.json of the array)
+        # unpack: {"scale_factor": ..., "fill_value": ...}: the core returns float32 (CF mask_and_scale done
+        # per chunk, in parallel) instead of the stored int16
         self.spec = spec
         self.shape = tuple(shape)
-        self.dtype = np.dtype(dtype)
+        self.unpack = unpack
+        self.dtype = np.dtype("float32" if unpack else dtype)
         self.last_layout: str | None = None
         self._arrays: dict[str, Array] | None = None
 
     @property
     def arrays(self) -> dict[str, Array]:
         if self._arrays is None:
-            self._arrays = {n: Array(Store(loc), path, meta) for n, (loc, path, meta) in self.spec.items()}
+            self._arrays = {n: Array(Store(loc), path, meta, **(self.unpack or {})) for n, (loc, path, meta) in self.spec.items()}
         return self._arrays
 
     def __getstate__(self):
-        return {"spec": self.spec, "shape": self.shape, "dtype": self.dtype}
+        return {"spec": self.spec, "shape": self.shape, "dtype": self.dtype, "unpack": self.unpack}
 
     def __setstate__(self, state):
-        self.__init__(state["spec"], state["shape"], state["dtype"])
+        self.__init__(state["spec"], state["shape"], state["dtype"], state["unpack"])
 
     def __getitem__(self, key):
         return indexing.explicit_indexing_adapter(key, self.shape, indexing.IndexingSupport.BASIC, self._getitem)
@@ -143,10 +146,11 @@ class X3DArray(BackendArray):
 
 
 class X3DStore(AbstractDataStore):
-    def __init__(self, run: Run, mode: str, ov: dict | None = None):
+    def __init__(self, run: Run, mode: str, ov: dict | None = None, mask_and_scale: bool = True):
         self.run = run
         self.mode = mode
         self._ov = ov
+        self.mask_and_scale = mask_and_scale
 
     def get_dimensions(self):
         return {d: n for v in self.get_variables().values() for d, n in zip(v.dims, v.shape)}
@@ -179,7 +183,14 @@ class X3DStore(AbstractDataStore):
                 if name in per_layout[n] and per_layout[n][name]["shape"] == meta["shape"]
             }
             dims = tuple(meta["dimension_names"])
-            var = xr.Variable(dims, indexing.LazilyIndexedArray(X3DArray(spec, meta["shape"], meta["data_type"])), _clean_attrs(meta))
+            attrs, unpack, encoding = _clean_attrs(meta), None, {}
+            if self.mask_and_scale and meta["data_type"] == "int16" and "scale_factor" in attrs:
+                # unpacked by the core: the CF attributes move to encoding so that xarray does not decode again
+                unpack = {"scale_factor": float(attrs.pop("scale_factor"))}
+                encoding = {"scale_factor": np.float32(unpack["scale_factor"]), "dtype": np.dtype("int16")}
+                if "_FillValue" in attrs:
+                    unpack["fill_value"] = encoding["_FillValue"] = int(attrs.pop("_FillValue"))
+            var = xr.Variable(dims, indexing.LazilyIndexedArray(X3DArray(spec, meta["shape"], meta["data_type"], unpack)), attrs, encoding)
             var.encoding["preferred_chunks"] = {d: min(c, s) for d, c, s in zip(dims, meta["chunk_grid"]["configuration"]["chunk_shape"], meta["shape"])}
             out[name] = var
 
@@ -233,7 +244,7 @@ class X3DBackendEntrypoint(BackendEntrypoint):
         needed = ("ts", *{"auto": ("map",), "map": ("map",), "ov": ("ov",), "ts": ()}[mode])
         r = open_run(root, run or opts.get("run"), needed)
         ds = StoreBackendEntrypoint().open_dataset(
-            X3DStore(r, mode),
+            X3DStore(r, mode, mask_and_scale=mask_and_scale),
             mask_and_scale=mask_and_scale, decode_times=decode_times, concat_characters=concat_characters,
             decode_coords=decode_coords, drop_variables=drop_variables, use_cftime=use_cftime,
             decode_timedelta=decode_timedelta,

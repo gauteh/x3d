@@ -29,7 +29,7 @@ caching of decoded chunks or overview-to-field refinement.
 
 ## Benchmark: THREDDS vs x3d
 
-![THREDDS OPeNDAP vs x3d on RGW, cold reads of ww3_4km hs](docs/thredds_vs_x3d.png)
+![ww3_4km hs: THREDDS, netCDF4 on /lustre, x3d on RGW and x3d local store](docs/thredds_vs_x3d.png)
 
 Regenerate (needs network; overwrites the image, then commit it):
 
@@ -54,11 +54,16 @@ Tests (`tests/`):
 - A local HTTP server with Range support that logs requests: asserts open cost and requests per access pattern.
 - `-m rgw`: integration against the public RGW bucket (`X3D_RGW_URL` overrides; skipped if unreachable).
 - `-m store`: against the local wave-world store (`X3D_TEST_STORE`, default `../wave-world/store/ww3_4km`).
-- `tests/test_benchmark.py` (marked `rgw`): pytest-benchmark of THREDDS OPeNDAP (`X3D_THREDDS_URL`) vs x3d on RGW for
-  the same time window (open, point series (fixed and random point), field, box, several fields), cold reads. Benchmarking is disabled by default
-  (`addopts = --benchmark-disable`: each case runs once as a plain test); `--benchmark-enable` measures,
-  `--benchmark-only` runs only the benchmarks, and the bar plot goes to `docs/` (`X3D_BENCH_OUT`; rounds via
-  `X3D_BENCH_ROUNDS`). A separate test checks both sources return the same numbers.
+- `tests/test_benchmark.py` (marked `rgw`): pytest-benchmark of the same ww3_4km `hs` data through four backends:
+  THREDDS OPeNDAP (`X3D_THREDDS_URL`), the NetCDF file on `/lustre` read with netCDF4 (newest
+  `ww3_4km_<date>T00Z.nc` below `X3D_LUSTRE_ROOT`, or `X3D_LUSTRE_FILE`), x3d on RGW and x3d on the local store
+  (`x3d+file://`, `X3D_TEST_STORE`); unavailable ones are skipped. Scenarios: open, point series (fixed and random
+  point), field, box, several fields. Each round opens the dataset anew (not timed). The two file-based backends
+  are only cold in the first round (later rounds hit the OS page cache), so read them as best case. Benchmarking is
+  disabled by default (`addopts = --benchmark-disable`: each case runs once as a plain test); `--benchmark-enable`
+  measures, `--benchmark-only` runs only the benchmarks, and the bar plot goes to `docs/` (`X3D_BENCH_OUT`; rounds
+  via `X3D_BENCH_ROUNDS`). Separate tests check THREDDS and the lustre file (when from the same model run) return
+  the same numbers as x3d.
 - `tests/test_microbench.py` (`-m "rgw or store" -s`): where a read spends its time, from `Array.read_profiled`
   (index requests, store fetches, zstd decode, copy into the output; thread-time summed, next to wall time), against
   RGW and the local store. On RGW the wall time is fetching; decode + copy are a few ms even for six full fields,

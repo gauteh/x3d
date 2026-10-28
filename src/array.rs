@@ -221,10 +221,34 @@ fn since(t: Instant, into: &AtomicU64) {
     into.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
 }
 
+/// CF unpacking done while the chunks are decoded: `int16` -> `float32` as `raw * scale`, `fill` -> NaN.
+/// It is the same arithmetic as xarray's `mask_and_scale` (a float32 scale), done once, per chunk, in
+/// parallel and straight into the output, instead of three passes over the whole result in numpy.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Decode {
+    pub scale: f32,
+    pub fill: Option<i16>,
+}
+
+impl Decode {
+    fn value(&self, v: i16) -> f32 {
+        if Some(v) == self.fill { f32::NAN } else { v as f32 * self.scale }
+    }
+
+    fn apply(&self, raw: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(raw.len() * 2);
+        for c in raw.chunks_exact(2) {
+            out.extend_from_slice(&self.value(i16::from_le_bytes([c[0], c[1]])).to_le_bytes());
+        }
+        out
+    }
+}
+
 pub struct Array {
     store: Store,
     path: String,
     pub meta: Meta,
+    decode: Option<Decode>,
     indexes: Mutex<HashMap<String, Index>>,
 }
 
@@ -236,6 +260,9 @@ pub struct Plan {
     pub bytes: u64,
 }
 
+/// Shard index entry of a chunk that was never written.
+const ABSENT: (u64, u64) = (u64::MAX, u64::MAX);
+
 struct Leaf {
     /// Element offset of the leaf chunk in the array.
     origin: Vec<u64>,
@@ -246,7 +273,21 @@ struct Leaf {
 
 impl Array {
     pub fn new(store: Store, path: &str, meta: Meta) -> Array {
-        Array { store, path: path.trim_matches('/').to_string(), meta, indexes: Mutex::new(HashMap::new()) }
+        Array { store, path: path.trim_matches('/').to_string(), meta, decode: None, indexes: Mutex::new(HashMap::new()) }
+    }
+
+    /// Return `float32` (unpacked) instead of the stored `int16`.
+    pub fn with_decode(mut self, decode: Decode) -> Result<Array> {
+        if self.meta.dtype != "int16" {
+            return Err(Error::Unsupported(format!("unpacking {}", self.meta.dtype)));
+        }
+        self.decode = Some(decode);
+        Ok(self)
+    }
+
+    /// Bytes per element of what `read` returns.
+    pub fn out_itemsize(&self) -> usize {
+        if self.decode.is_some() { 4 } else { self.meta.itemsize }
     }
 
     pub fn check(&self, sel: &[Slice]) -> Result<()> {
@@ -320,8 +361,9 @@ impl Array {
         let t = Instant::now();
         let index = self.shard_index(&key)?;
         since(t, &prof.index_ns);
-        let Some(index) = index else { return Ok(vec![]) };
         let grid: Vec<u64> = self.meta.chunks.iter().zip(inner).map(|(c, i)| c / i).collect();
+        // a missing shard is all absent chunks
+        let index = index.unwrap_or_else(|| vec![ABSENT; grid.iter().product::<u64>() as usize].into());
         let base: Vec<u64> = outer.iter().zip(&self.meta.chunks).map(|(i, c)| i * c).collect();
         // Per dimension, inner chunk indices (within the shard) that are selected.
         let per_dim: Vec<Vec<u64>> = (0..sel.len())
@@ -337,9 +379,6 @@ impl Array {
         for_each_index(&per_dim, |ix| {
             let lin = ix.iter().zip(&grid).fold(0u64, |acc, (&i, &g)| acc * g + i);
             let (off, len) = index[lin as usize];
-            if off == u64::MAX && len == u64::MAX {
-                return;
-            }
             out.push(Leaf {
                 origin: (0..ix.len()).map(|d| base[d] + ix[d] * inner[d]).collect(),
                 key: key.clone(),
@@ -350,6 +389,9 @@ impl Array {
     }
 
     fn fetch(&self, leaf: &Leaf, prof: &Profile) -> Result<Option<Vec<u8>>> {
+        if leaf.span == Some(ABSENT) {
+            return Ok(None);
+        }
         let range = match leaf.span {
             None => ByteRange::Full,
             Some((start, len)) => ByteRange::Span { start, len },
@@ -367,10 +409,14 @@ impl Array {
         } else {
             raw
         };
-        since(t, &prof.decode_ns);
         if data.len() != expect {
             return Err(Error::Corrupt(format!("{}: chunk is {} bytes, expected {expect}", leaf.key, data.len())));
         }
+        let data = match &self.decode {
+            Some(d) => d.apply(&data),
+            None => data,
+        };
+        since(t, &prof.decode_ns);
         Ok(Some(data))
     }
 
@@ -386,11 +432,12 @@ impl Array {
         self.check(sel)?;
         let out_shape: Vec<u64> = sel.iter().map(Slice::len).collect();
         let n: usize = out_shape.iter().product::<u64>() as usize;
-        let isz = self.meta.itemsize;
+        let isz = self.out_itemsize();
         let mut out = vec![0u8; n * isz];
-        if self.meta.fill.iter().any(|&b| b != 0) {
-            out.chunks_exact_mut(isz).for_each(|c| c.copy_from_slice(&self.meta.fill));
-        }
+        let fill = match &self.decode {
+            Some(d) => d.value(i16::from_le_bytes([self.meta.fill[0], self.meta.fill[1]])).to_le_bytes().to_vec(),
+            None => self.meta.fill.clone(),
+        };
         if n == 0 {
             return Ok((out, prof));
         }
@@ -405,12 +452,17 @@ impl Array {
             outer.par_iter().try_for_each(|o| -> Result<()> {
                 let leaves = self.leaves(sel, o, &prof)?;
                 leaves.par_iter().try_for_each(|leaf| -> Result<()> {
-                    if let Some(data) = self.fetch(leaf, &prof)? {
-                        let t = Instant::now();
-                        let mut out = out.lock().unwrap();
-                        scatter(&data, &leaf.origin, &leaf_shape, sel, &out_shape, isz, &mut out);
-                        since(t, &prof.scatter_ns);
-                    }
+                    // every selected element lies in a leaf, so the output is written once (no pre-fill);
+                    // absent chunks are scattered as fill
+                    let data = match self.fetch(leaf, &prof)? {
+                        Some(d) => d,
+                        None if fill.iter().all(|&b| b == 0) => return Ok(()),
+                        None => fill.repeat(leaf_shape.iter().product::<u64>() as usize),
+                    };
+                    let t = Instant::now();
+                    let mut out = out.lock().unwrap();
+                    scatter(&data, &leaf.origin, &leaf_shape, sel, &out_shape, isz, &mut out);
+                    since(t, &prof.scatter_ns);
                     Ok(())
                 })
             })
@@ -574,6 +626,33 @@ mod tests {
             // a single point
             assert_eq!(as_i16(&a.read(&[sl(3, 4, 1), sl(4, 5, 1)]).unwrap()), vec![22]);
         }
+    }
+
+    #[test]
+    fn decode_unpacks_and_masks_like_cf() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw = build(dir.path(), true);
+        let a = Array::new(raw.store.clone(), "a", raw.meta.clone()).with_decode(Decode { scale: 0.5, fill: Some(7) }).unwrap();
+        assert_eq!(a.out_itemsize(), 4);
+        let out = a.read(&[sl(0, 4, 1), sl(0, 6, 1)]).unwrap();
+        let got: Vec<f32> = out.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect();
+        let stored = as_i16(&raw.read(&[sl(0, 4, 1), sl(0, 6, 1)]).unwrap());
+        for (g, v) in got.iter().zip(stored) {
+            // -1 is the array fill value (absent chunks); only 7 is the mask value
+            if v == 7 { assert!(g.is_nan()) } else { assert_eq!(*g, v as f32 * 0.5) }
+        }
+        // absent chunks decode too: the array fill (-1) is not the mask value, so it becomes -0.5
+        std::fs::remove_file(dir.path().join("a/c/0/0")).unwrap();
+        let gone = Array::new(raw.store.clone(), "a", raw.meta.clone()).with_decode(Decode { scale: 0.5, fill: Some(7) }).unwrap();
+        assert_eq!(gone.read(&[sl(0, 1, 1), sl(0, 1, 1)]).unwrap(), (-0.5f32).to_le_bytes());
+    }
+
+    #[test]
+    fn decode_needs_int16() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut a = build(dir.path(), true);
+        a.meta.dtype = "float32".into();
+        assert!(matches!(a.with_decode(Decode { scale: 1.0, fill: None }), Err(Error::Unsupported(_))));
     }
 
     #[test]

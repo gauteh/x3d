@@ -9,7 +9,7 @@ use numpy::{IntoPyArray, PyArray1};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 
-use crate::array::{Array, Meta, Slice};
+use crate::array::{Array, Decode, Meta, Slice};
 use crate::store::{ByteRange, Store};
 
 fn slices(sel: Vec<(u64, u64, u64)>) -> Vec<Slice> {
@@ -49,9 +49,16 @@ struct PyArray(Array);
 
 #[pymethods]
 impl PyArray {
+    /// With `scale_factor` (int16 arrays only) reads return float32 `raw * scale_factor`, with
+    /// `fill_value` (if given) as NaN, like CF `mask_and_scale`; otherwise the stored values.
     #[new]
-    fn new(store: &PyStore, path: &str, metadata: &str) -> PyResult<Self> {
-        Ok(PyArray(Array::new(store.0.clone(), path, Meta::parse(metadata)?)))
+    #[pyo3(signature = (store, path, metadata, scale_factor=None, fill_value=None))]
+    fn new(store: &PyStore, path: &str, metadata: &str, scale_factor: Option<f32>, fill_value: Option<i16>) -> PyResult<Self> {
+        let a = Array::new(store.0.clone(), path, Meta::parse(metadata)?);
+        Ok(PyArray(match scale_factor {
+            Some(scale) => a.with_decode(Decode { scale, fill: fill_value })?,
+            None => a,
+        }))
     }
 
     #[getter]
@@ -64,9 +71,10 @@ impl PyArray {
         self.0.meta.chunks.clone()
     }
 
+    /// Element type of what `read_raw` returns.
     #[getter]
     fn dtype(&self) -> String {
-        self.0.meta.dtype.clone()
+        if self.0.out_itemsize() != self.0.meta.itemsize { "float32".into() } else { self.0.meta.dtype.clone() }
     }
 
     /// Estimated (requests, uncompressed bytes) for a read of `sel` = [(start, stop, step), ...].
