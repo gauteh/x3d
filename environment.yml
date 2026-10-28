@@ -1,0 +1,20 @@
+# Development environment (build, tests, benchmarks):
+#   mamba env create -f environment.yml
+#   conda activate x3d
+#   maturin develop --release && pytest
+name: x3d
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.10
+  - rust
+  - maturin>=1.5,<2
+  - numpy
+  - xarray
+  - zarr>=3
+  - dask
+  - pytest
+  - pytest-benchmark
+  # benchmark against THREDDS and plot
+  - netcdf4
+  - matplotlib

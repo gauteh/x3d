@@ -37,9 +37,10 @@ Regenerate (needs network; overwrites the image, then commit it):
 
 ## Develop
 
-Use the `sfy` conda env (has maturin, pytest, xarray, zarr).
+Create the conda env from `environment.yml` (Rust, maturin, pytest, xarray, zarr, ...):
 
-    conda activate sfy
+    mamba env create -f environment.yml
+    conda activate x3d
     maturin develop --release     # builds src/ into python/x3d/_core*.so
     cargo test                    # Rust unit tests (hand-encoded shards, corruption, missing chunks)
     pytest                        # everything below
