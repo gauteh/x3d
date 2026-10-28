@@ -4,7 +4,7 @@ use crate::error::{Error, Result};
 use std::io::{Read, Seek, SeekFrom};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use ureq::Agent;
 use ureq::config::Config;
@@ -54,17 +54,27 @@ pub enum Store {
 
 const RETRIES: usize = 3;
 
-impl Store {
-    /// `root` is an `http(s)://` URL, a `file://` URL or a plain path.
-    pub fn open(root: &str) -> Store {
-        if root.starts_with("http://") || root.starts_with("https://") {
+/// One agent for the whole process: every variable opens its own `Store`, and a fresh agent means a
+/// new TLS connection and DNS lookup (~15 ms) for the first read of each.
+fn shared_agent() -> Agent {
+    static AGENT: OnceLock<Agent> = OnceLock::new();
+    AGENT
+        .get_or_init(|| {
             let config = Agent::config_builder()
                 .http_status_as_error(false)
                 .timeout_global(Some(Duration::from_secs(60)))
                 .max_idle_connections_per_host(32)
                 .build();
-            let agent = Agent::with_parts(config, DefaultConnector::default(), CachingResolver::default());
-            Store::Http { base: root.trim_end_matches('/').to_string(), agent }
+            Agent::with_parts(config, DefaultConnector::default(), CachingResolver::default())
+        })
+        .clone()
+}
+
+impl Store {
+    /// `root` is an `http(s)://` URL, a `file://` URL or a plain path.
+    pub fn open(root: &str) -> Store {
+        if root.starts_with("http://") || root.starts_with("https://") {
+            Store::Http { base: root.trim_end_matches('/').to_string(), agent: shared_agent() }
         } else {
             let p = root.strip_prefix("file://").unwrap_or(root);
             Store::File { root: PathBuf::from(p) }

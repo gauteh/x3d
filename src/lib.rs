@@ -7,7 +7,7 @@ mod store;
 
 use numpy::{IntoPyArray, PyArray1};
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
+use pyo3::types::{PyBytes, PyDict};
 
 use crate::array::{Array, Meta, Slice};
 use crate::store::{ByteRange, Store};
@@ -80,6 +80,23 @@ impl PyArray {
         let sel = slices(sel);
         let out = py.detach(|| self.0.read(&sel))?;
         Ok(out.into_pyarray(py))
+    }
+
+    /// Like `read_raw`, plus a dict of where the time went (seconds, summed over threads except `wall`).
+    fn read_profiled<'py>(&self, py: Python<'py>, sel: Vec<(u64, u64, u64)>) -> PyResult<(Bound<'py, PyArray1<u8>>, Bound<'py, PyDict>)> {
+        use std::sync::atomic::Ordering::Relaxed;
+        let sel = slices(sel);
+        let (out, p) = py.detach(|| self.0.read_profiled(&sel))?;
+        let d = PyDict::new(py);
+        let secs = |a: &std::sync::atomic::AtomicU64| a.load(Relaxed) as f64 * 1e-9;
+        d.set_item("wall", secs(&p.wall_ns))?;
+        d.set_item("index", secs(&p.index_ns))?;
+        d.set_item("fetch", secs(&p.fetch_ns))?;
+        d.set_item("decode", secs(&p.decode_ns))?;
+        d.set_item("scatter", secs(&p.scatter_ns))?;
+        d.set_item("chunks", p.chunks.load(Relaxed))?;
+        d.set_item("bytes_fetched", p.bytes_fetched.load(Relaxed))?;
+        Ok((out.into_pyarray(py), d))
     }
 }
 

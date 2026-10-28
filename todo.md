@@ -1,7 +1,8 @@
 ## usage
 - [ ] does local store (x3d+file) work symmetrically to the s3 version?
 - [x] engine in the URL: `xr.open_dataset("x3d+https://...")` works through `guess_can_open`; tested and used in the README and tests.
-- [ ] concurrent reads + parallel decompression: already done (rayon pool of >=16 threads fetching and zstd-decoding, GIL released). To do: measure the fetch vs decode split, add an `X3D_THREADS` knob, and avoid serialising `scatter` under the output `Mutex`.
+- [x] concurrent reads + parallel decompression: reads are already parallel (rayon pool, GIL released). `tests/test_microbench.py` (`Array.read_profiled`) shows that on RGW the time is the network (fetch summed over threads is 100s of ms; decode + copy are 2-8 ms even for 6 full fields), so no further decode/scatter work is worth it. Findings: a fresh `Store` per variable cost ~15 ms (new TLS connection + DNS), now one process-wide HTTP agent is shared (open 55 -> 15 ms, point series 17 -> 6 ms, field 23 -> 11 ms); added `X3D_THREADS`.
+- [ ] remaining latency is round trips: cold shard-index fetch before every first chunk fetch (see the consolidated index sidecar below); box/field reads wait on ~10-50 parallel requests, so check coalescing neighbouring chunk ranges (a shard with `time=1` is one contiguous object).
 - [ ] `ov` accessor on the variable: `da.x3d.ov` (and `ds.x3d.ov`) returns the overview for the same time/space selection, so `ds.hs.x3d.ov.isel(time=0).plot()` works. Needs the source URL/run on `var.encoding`.
 
 ## metadata + coordinate optimization

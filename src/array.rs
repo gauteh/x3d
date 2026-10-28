@@ -5,13 +5,20 @@ use crate::error::{Error, Result};
 use crate::store::{ByteRange, Store};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 
-/// Concurrency is bound by network latency, not CPU, so use more threads than cores.
+/// Concurrency is bound by network latency, not CPU, so use more threads than cores
+/// (`X3D_THREADS` overrides).
 fn pool() -> &'static rayon::ThreadPool {
     static POOL: OnceLock<rayon::ThreadPool> = OnceLock::new();
     POOL.get_or_init(|| {
-        let n = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).max(16);
+        let n = std::env::var("X3D_THREADS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).max(16));
         rayon::ThreadPoolBuilder::new()
             .num_threads(n)
             .thread_name(|i| format!("x3d-io-{i}"))
@@ -194,6 +201,26 @@ fn parse_codecs(list: &[Value]) -> Result<Codecs> {
 
 type Index = Option<Arc<Vec<(u64, u64)>>>;
 
+/// Where one read spent its time. The `*_ns` fields are summed over all threads, so compared with
+/// `wall_ns` they show how much work was done in parallel (and what the work consisted of).
+#[derive(Debug, Default)]
+pub struct Profile {
+    /// Shard index requests (cold ones only).
+    pub index_ns: AtomicU64,
+    /// Waiting for the store: HTTP round trip + body, or the file read.
+    pub fetch_ns: AtomicU64,
+    pub decode_ns: AtomicU64,
+    /// Copying a decoded chunk into the output, including the wait for the output lock.
+    pub scatter_ns: AtomicU64,
+    pub chunks: AtomicU64,
+    pub bytes_fetched: AtomicU64,
+    pub wall_ns: AtomicU64,
+}
+
+fn since(t: Instant, into: &AtomicU64) {
+    into.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
+}
+
 pub struct Array {
     store: Store,
     path: String,
@@ -285,12 +312,15 @@ impl Array {
     }
 
     /// Leaves (fetchable chunks) of one outer chunk that the selection touches.
-    fn leaves(&self, sel: &[Slice], outer: &[u64]) -> Result<Vec<Leaf>> {
+    fn leaves(&self, sel: &[Slice], outer: &[u64], prof: &Profile) -> Result<Vec<Leaf>> {
         let key = self.key(outer);
         let Layout::Sharded { inner, .. } = &self.meta.layout else {
             return Ok(vec![Leaf { origin: outer.iter().zip(&self.meta.chunks).map(|(i, c)| i * c).collect(), key, span: None }]);
         };
-        let Some(index) = self.shard_index(&key)? else { return Ok(vec![]) };
+        let t = Instant::now();
+        let index = self.shard_index(&key)?;
+        since(t, &prof.index_ns);
+        let Some(index) = index else { return Ok(vec![]) };
         let grid: Vec<u64> = self.meta.chunks.iter().zip(inner).map(|(c, i)| c / i).collect();
         let base: Vec<u64> = outer.iter().zip(&self.meta.chunks).map(|(i, c)| i * c).collect();
         // Per dimension, inner chunk indices (within the shard) that are selected.
@@ -319,18 +349,25 @@ impl Array {
         Ok(out)
     }
 
-    fn fetch(&self, leaf: &Leaf) -> Result<Option<Vec<u8>>> {
+    fn fetch(&self, leaf: &Leaf, prof: &Profile) -> Result<Option<Vec<u8>>> {
         let range = match leaf.span {
             None => ByteRange::Full,
             Some((start, len)) => ByteRange::Span { start, len },
         };
-        let Some(raw) = self.store.get(&leaf.key, range)? else { return Ok(None) };
+        let t = Instant::now();
+        let raw = self.store.get(&leaf.key, range)?;
+        since(t, &prof.fetch_ns);
+        let Some(raw) = raw else { return Ok(None) };
+        prof.bytes_fetched.fetch_add(raw.len() as u64, Relaxed);
+        prof.chunks.fetch_add(1, Relaxed);
+        let t = Instant::now();
         let expect = self.meta.leaf_shape().iter().product::<u64>() as usize * self.meta.itemsize;
         let data = if self.meta.codecs.zstd {
             zstd::bulk::decompress(&raw, expect).map_err(|e| Error::Corrupt(format!("{}: {e}", leaf.key)))?
         } else {
             raw
         };
+        since(t, &prof.decode_ns);
         if data.len() != expect {
             return Err(Error::Corrupt(format!("{}: chunk is {} bytes, expected {expect}", leaf.key, data.len())));
         }
@@ -339,7 +376,13 @@ impl Array {
 
     /// Read a strided hyperslab as C-ordered little-endian bytes. Missing chunks read as the fill value.
     pub fn read(&self, sel: &[Slice]) -> Result<Vec<u8>> {
+        self.read_profiled(sel).map(|(out, _)| out)
+    }
+
+    pub fn read_profiled(&self, sel: &[Slice]) -> Result<(Vec<u8>, Profile)> {
         use rayon::prelude::*;
+        let started = Instant::now();
+        let prof = Profile::default();
         self.check(sel)?;
         let out_shape: Vec<u64> = sel.iter().map(Slice::len).collect();
         let n: usize = out_shape.iter().product::<u64>() as usize;
@@ -349,7 +392,7 @@ impl Array {
             out.chunks_exact_mut(isz).for_each(|c| c.copy_from_slice(&self.meta.fill));
         }
         if n == 0 {
-            return Ok(out);
+            return Ok((out, prof));
         }
 
         let per_dim: Vec<Vec<u64>> = sel.iter().zip(&self.meta.chunks).map(|(s, &c)| touched(s, c)).collect();
@@ -360,17 +403,20 @@ impl Array {
         let leaf_shape = self.meta.leaf_shape().to_vec();
         pool().install(|| {
             outer.par_iter().try_for_each(|o| -> Result<()> {
-                let leaves = self.leaves(sel, o)?;
+                let leaves = self.leaves(sel, o, &prof)?;
                 leaves.par_iter().try_for_each(|leaf| -> Result<()> {
-                    if let Some(data) = self.fetch(leaf)? {
+                    if let Some(data) = self.fetch(leaf, &prof)? {
+                        let t = Instant::now();
                         let mut out = out.lock().unwrap();
                         scatter(&data, &leaf.origin, &leaf_shape, sel, &out_shape, isz, &mut out);
+                        since(t, &prof.scatter_ns);
                     }
                     Ok(())
                 })
             })
         })?;
-        Ok(out.into_inner().unwrap())
+        since(started, &prof.wall_ns);
+        Ok((out.into_inner().unwrap(), prof))
     }
 }
 

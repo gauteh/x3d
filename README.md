@@ -58,3 +58,7 @@ Tests (`tests/`):
   (`addopts = --benchmark-disable`: each case runs once as a plain test); `--benchmark-enable` measures,
   `--benchmark-only` runs only the benchmarks, and the bar plot goes to `docs/` (`X3D_BENCH_OUT`; rounds via
   `X3D_BENCH_ROUNDS`). A separate test checks both sources return the same numbers.
+- `tests/test_microbench.py` (`-m "rgw or store" -s`): where a read spends its time, from `Array.read_profiled`
+  (index requests, store fetches, zstd decode, copy into the output; thread-time summed, next to wall time), against
+  RGW and the local store. On RGW the wall time is fetching; decode + copy are a few ms even for six full fields,
+  so decoding is not the bottleneck. `X3D_THREADS` sets the size of the I/O + decode pool (default max(16, cores)).
