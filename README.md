@@ -59,7 +59,8 @@ Tests (`tests/`):
   `ww3_4km_<date>T00Z.nc` below `X3D_LUSTRE_ROOT`, or `X3D_LUSTRE_FILE`), x3d on RGW and x3d on the local store
   (`x3d+file://`, `X3D_TEST_STORE`); unavailable ones are skipped. Scenarios: open, point series (fixed and random
   point), field, box, several fields. Each round opens the dataset anew (not timed). The two file-based backends
-  are only cold in the first round (later rounds hit the OS page cache), so read them as best case. The local x3d reads are CPU-bound (zstd) on a thread pool, and the pause between
+  are only cold in the first round (later rounds hit the OS page cache), so read them as best case. The /lustre file is uncompressed float32 (8.8 GB, one field per chunk), so netCDF4 does
+  no decoding and is not a like-for-like comparison with the int16 + zstd store (~0.2 GB); the plot legend says so. The local x3d reads are CPU-bound (zstd) on a thread pool, and the pause between
   rounds roughly doubles them (a 100x100x24 box: 1.0 ms back to back, 2.2 ms after a 0.3 s pause; 7 ms on one
   thread), so the plot is the idle-start figure. Benchmarking is
   disabled by default (`addopts = --benchmark-disable`: each case runs once as a plain test); `--benchmark-enable`

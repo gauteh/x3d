@@ -51,7 +51,7 @@ SCENARIOS = {
     "fields: 6 steps, full grid": lambda ds: ds.hs.isel(time=slice(0, 6)).values,
 }
 BACKENDS = ("thredds", "lustre", "x3d", "x3d-local")
-LABELS = {"thredds": "THREDDS OPeNDAP", "lustre": "netCDF4 on /lustre", "x3d": "x3d (Zarr on RGW)", "x3d-local": "x3d (local store)"}
+LABELS = {"thredds": "THREDDS OPeNDAP", "lustre": "netCDF4 on /lustre\n(uncompressed float32, 8.8 GB)", "x3d": "x3d (Zarr on RGW)\n(int16 + zstd, ~0.2 GB)", "x3d-local": "x3d (local store)"}
 COLORS = {"thredds": "#7570b3", "lustre": "#d95f02", "x3d": "#1b9e77", "x3d-local": "#66a61e"}
 
 results: dict[tuple[str, str], float] = {}
@@ -138,7 +138,7 @@ def plot_at_end():
     ax.set_ylabel("median time (s, log scale)")
     ax.set_xticks(range(len(names)), [n.replace(": ", ":\n") for n in names], fontsize=8)
     ax.set_title("ww3_4km hs: median time per access pattern (labels in ms)")
-    ax.legend()
+    ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1.0), fontsize=8)
     fig.tight_layout()
     OUT.mkdir(exist_ok=True)
     fig.savefig(OUT / "thredds_vs_x3d.png", dpi=150)
