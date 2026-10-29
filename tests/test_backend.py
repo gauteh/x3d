@@ -112,6 +112,18 @@ def test_pinned_layout_is_respected(store_dir):
         assert backing(ds.hs).last_layout == pin
 
 
+def test_grid_names_come_from_dataset_json(projected_store_dir):
+    """NorKyst-like store: Y/X dims and lat/lon coordinates are declared in dataset.json, not assumed."""
+    ds = open_local(projected_store_dir)
+    assert ds.hs.dims == ("time", "Y", "X") and {"lat", "lon"} <= set(ds.coords)
+    for sel in (dict(Y=25, X=20), dict(time=2), dict(time=slice(1, 5), Y=slice(10, 35), X=slice(12, 28))):
+        np.testing.assert_array_equal(ds.hs.isel(sel).values, expected("hs", {k.replace("Y", "rlat").replace("X", "rlon"): v for k, v in sel.items()}))
+    ov = open_local(projected_store_dir, layout="ov")
+    oy, ox = -(-NY // OVF), -(-NX // OVF)
+    assert ov.hs.shape == (NT, oy, ox) and ov.hs.dims == ("time", "Y", "X") and ov.Y.shape == (oy,)
+    assert "lat" not in ov.variables
+
+
 def test_overview_is_coarse_grid_with_block_mean_coordinates(store_dir):
     ds = open_local(store_dir, layout="ov")
     oy, ox = -(-NY // OVF), -(-NX // OVF)

@@ -22,8 +22,9 @@ log = logging.getLogger("x3d")
 
 EXACT_LAYOUTS = ("ts", "map")
 LAYOUT_MODES = ("auto", "ts", "map", "ov")
-# Coordinates that are 2-D georeferencing fields rather than data.
+# Defaults for stores whose dataset.json predates the "geo" and "dims" keys (ww3_4km).
 GEO_COORDS = ("latitude", "longitude")
+GRID_DIMS = {"y": "rlat", "x": "rlon"}
 
 
 @dataclass
@@ -42,6 +43,16 @@ class Run:
 
     def layout_location(self, layout: str) -> str:
         return f"{self.location}/{layout}.zarr"
+
+    @property
+    def geo(self) -> tuple[str, ...]:
+        """The 2-D georeferencing fields (latitude/longitude), which are coordinates rather than data."""
+        return tuple(self.info.get("geo", GEO_COORDS))
+
+    @property
+    def grid_dims(self) -> tuple[str, str]:
+        d = self.info.get("dims", GRID_DIMS)
+        return d["y"], d["x"]
 
 
 def _get_json(store: Store, key: str) -> dict:
@@ -168,7 +179,7 @@ class X3DStore(AbstractDataStore):
 
         if self.mode == "ov":
             layouts = ("ov",)
-            skip = {"time", *GEO_COORDS}
+            skip = {"time", *run.geo}
         else:
             layouts = EXACT_LAYOUTS if self.mode == "auto" else (self.mode,)
             skip = {"time"}
@@ -196,7 +207,7 @@ class X3DStore(AbstractDataStore):
 
         if self.mode == "ov":
             f = run.info["ov_factor"]
-            for name in ("rlat", "rlon"):
+            for name in run.grid_dims:
                 fine = np.asarray(_read_coord(run, name))
                 out[name] = xr.Variable((name,), _block_mean(fine, f), _clean_attrs(_arrays(run.metas["ts"])[name]))
         return out
@@ -249,7 +260,7 @@ class X3DBackendEntrypoint(BackendEntrypoint):
             decode_coords=decode_coords, drop_variables=drop_variables, use_cftime=use_cftime,
             decode_timedelta=decode_timedelta,
         )
-        ds = ds.set_coords([c for c in GEO_COORDS if c in ds])
+        ds = ds.set_coords([c for c in r.geo if c in ds])
         ds.encoding["source"] = r.location
         return ds
 

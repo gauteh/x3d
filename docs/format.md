@@ -56,6 +56,7 @@ Values are `raw * scale_factor` with a float32 scale.
 | `name`, `run`, `model_run` | store name, run id, reference time of the newest model run (ISO, may be null) |
 | `times` | the time axis, ISO 8601 UTC strings (`...Z`), identical for all layouts |
 | `ny`, `nx`, `dims` | grid size and the names of the y and x dimensions: `{"y": "rlat", "x": "rlon"}` |
+| `geo` | names of the 2-D latitude/longitude variables, `["lat", "lon"]` (default when absent) |
 | `ov_factor`, `ov_tchunk`, `ov_vars` | overview resolution divisor, its time chunk, variables it holds |
 | `scales` | `scale_factor` per variable |
 | `mesh_stride`, `mesh_ny`, `mesh_nx` | `grid.bin` geometry: lon mesh then lat mesh, float32 LE |
@@ -65,8 +66,8 @@ Layout shapes and chunking are also in each array's own `zarr.json`; readers pic
 
 ## Not yet specified / open
 
-- Models without `rlat`/`rlon` and with a vertical dimension (NorKyst-800, one surface layer first). `dims`
-  names the horizontal dimensions; a `select` for the vertical level is the publisher's business for now.
+- Vertical dimensions: the publisher selects one level (NorKyst-800 surface, `select = {depth = 0.0}`); stores
+  hold horizontal fields only. `dims` and `geo` name the horizontal dimensions and coordinates.
 - A consolidated index sidecar so a warm client needs fewer round trips (see `todo.md`).
 - Whether readers or producers own the `ov` y/x coordinates.
 

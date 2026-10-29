@@ -46,43 +46,48 @@ def _shard(shape, outer, inner, location):
     )
 
 
-def _write_layout(path: Path, outer, inner, location):
+def _write_layout(path: Path, outer, inner, location, names=("rlat", "rlon", "latitude", "longitude")):
+    yd, xd, latn, lonn = names
     g = zarr.open_group(path, mode="w", zarr_format=3)
     g.attrs.update({"title": "synthetic", "Conventions": "CF-1.8"})
     g.create_array("time", data=np.arange(NT, dtype="int64"), chunks=(NT,), dimension_names=("time",),
                    attributes={"units": "hours since 2026-01-01 00:00:00"})
     rlat = np.linspace(-10, 10, NY)
     rlon = np.linspace(5, 25, NX)
-    g.create_array("rlat", data=rlat, chunks=(NY,), dimension_names=("rlat",), attributes={"units": "degrees"})
-    g.create_array("rlon", data=rlon, chunks=(NX,), dimension_names=("rlon",), attributes={"units": "degrees"})
+    g.create_array(yd, data=rlat, chunks=(NY,), dimension_names=(yd,), attributes={"units": "degrees"})
+    g.create_array(xd, data=rlon, chunks=(NX,), dimension_names=(xd,), attributes={"units": "degrees"})
     lat = (60 + rlat[:, None] + 0 * rlon[None, :]).astype("float32")
     lon = (rlon[None, :] + 0 * rlat[:, None]).astype("float32")
-    for n, v, u in (("latitude", lat, "degrees_north"), ("longitude", lon, "degrees_east")):
-        g.create_array(n, data=v, dimension_names=("rlat", "rlon"), attributes={"units": u},
+    for n, v, u in ((latn, lat, "degrees_north"), (lonn, lon, "degrees_east")):
+        g.create_array(n, data=v, dimension_names=(yd, xd), attributes={"units": u},
                        **_shard(v.shape, outer[1:], inner[1:], location))
     for name, scale in SCALES.items():
         a = g.create_array(name, shape=(NT, NY, NX), dtype="int16", fill_value=FILL,
-                           dimension_names=("time", "rlat", "rlon"),
+                           dimension_names=("time", yd, xd),
                            attributes={"units": "m", "scale_factor": scale, "_FillValue": FILL, "_ChunkSizes": [1, NY, NX]},
                            **_shard((NT, NY, NX), outer, inner, location))
         a[:] = packed(name)
     zarr.consolidate_metadata(path)
 
 
-def write_store(root: Path) -> Path:
-    """<root>/latest.json and <root>/<run>/{dataset.json,ts.zarr,map.zarr,ov.zarr}."""
+def write_store(root: Path, names=None) -> Path:
+    """<root>/latest.json and <root>/<run>/{dataset.json,ts.zarr,map.zarr,ov.zarr}. `names` = (y, x, lat, lon) names
+    of a store with a different grid (like NorKyst's Y/X and lat/lon, declared in dataset.json); the default is
+    ww3_4km's, whose dataset.json has no "dims"/"geo" keys."""
+    wnames = names or ("rlat", "rlon", "latitude", "longitude")
+    yd, xd = wnames[:2]
     run = root / RUN
     run.mkdir(parents=True)
     # ts: all time per shard, small spatial inner chunks; map: one time per shard, bigger spatial chunks
-    _write_layout(run / "ts.zarr", (NT, 16, 16), (NT, 4, 4), ShardingCodecIndexLocation.start)
-    _write_layout(run / "map.zarr", (1, 32, 32), (1, 16, 16), ShardingCodecIndexLocation.end)
+    _write_layout(run / "ts.zarr", (NT, 16, 16), (NT, 4, 4), ShardingCodecIndexLocation.start, wnames)
+    _write_layout(run / "map.zarr", (1, 32, 32), (1, 16, 16), ShardingCodecIndexLocation.end, wnames)
 
     g = zarr.open_group(run / "ov.zarr", mode="w", zarr_format=3)
     g.create_array("time", data=np.arange(NT, dtype="int64"), chunks=(NT,), dimension_names=("time",))
     oy, ox = -(-NY // OVF), -(-NX // OVF)
     for name, scale in SCALES.items():
         a = g.create_array(name, shape=(NT, oy, ox), chunks=(NT, oy, ox), dtype="int16", fill_value=FILL,
-                           dimension_names=("time", "rlat", "rlon"), compressors=ZstdCodec(),
+                           dimension_names=("time", yd, xd), compressors=ZstdCodec(),
                            attributes={"units": "m", "scale_factor": scale, "_FillValue": FILL})
         a[:] = packed(name)[:, ::OVF, ::OVF]
     zarr.consolidate_metadata(run / "ov.zarr")
@@ -90,7 +95,8 @@ def write_store(root: Path) -> Path:
     times = [f"2026-01-01T{h:02d}:00:00Z" for h in range(NT)]
     (run / "dataset.json").write_text(json.dumps(
         {"name": "synthetic", "run": RUN, "model_run": "2026-01-01T00:00:00Z", "times": times,
-         "ny": NY, "nx": NX, "ov_factor": OVF, "scales": SCALES}))
+         "ny": NY, "nx": NX, "ov_factor": OVF, "scales": SCALES,
+         **({"dims": {"y": yd, "x": xd}, "geo": list(wnames[2:])} if names else {})}))
     (root / "latest.json").write_text(json.dumps({"run": RUN}))
     return root
 
@@ -98,6 +104,11 @@ def write_store(root: Path) -> Path:
 @pytest.fixture(scope="session")
 def store_dir(tmp_path_factory) -> Path:
     return write_store(tmp_path_factory.mktemp("ww3_4km"))
+
+
+@pytest.fixture(scope="session")
+def projected_store_dir(tmp_path_factory) -> Path:
+    return write_store(tmp_path_factory.mktemp("norkyst800"), ("Y", "X", "lat", "lon"))
 
 
 class RangeHandler(http.server.SimpleHTTPRequestHandler):
