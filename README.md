@@ -30,7 +30,7 @@ caching of decoded chunks or overview-to-field refinement.
 
 ## Benchmark: THREDDS vs x3d
 
-![ww3_4km hs: THREDDS, netCDF4 on /lustre, x3d on RGW and x3d local store](docs/thredds_vs_x3d.png)
+![(a) ww3_4km hs: THREDDS, netCDF4 on /lustre, x3d on RGW and x3d local store; (b) NorKyst-800 surface current: THREDDS and x3d on RGW](docs/thredds_vs_x3d.png)
 
 Regenerate (needs network; overwrites the image, then commit it):
 
@@ -58,7 +58,7 @@ Tests (`tests/`):
 - A local HTTP server with Range support that logs requests: asserts open cost and requests per access pattern.
 - `-m rgw`: integration against the public RGW bucket (`X3D_RGW_URL` overrides; skipped if unreachable).
 - `-m store`: against the local wave-world store (`X3D_TEST_STORE`, default `../wave-world/store/ww3_4km`).
-- `tests/test_benchmark.py` (marked `rgw`): pytest-benchmark of the same ww3_4km `hs` data through four backends:
+- `tests/test_benchmark.py` (marked `rgw`): pytest-benchmark of the same data through up to four backends, one plot panel per dataset (a: ww3_4km `hs`, all four backends; b: NorKyst-800 surface current `u_eastward`, THREDDS `fou-hi/norkystv3_800m_m00_be` at depth 0 (`X3D_THREDDS_NK800_URL`) and x3d on RGW (`X3D_RGW_NK800_URL`)):
   THREDDS OPeNDAP (`X3D_THREDDS_URL`), the NetCDF file on `/lustre` read with netCDF4 (newest
   `ww3_4km_<date>T00Z.nc` below `X3D_LUSTRE_ROOT`, or `X3D_LUSTRE_FILE`), x3d on RGW and x3d on the local store
   (`x3d+file://`, `X3D_TEST_STORE`); unavailable ones are skipped. Scenarios: open, point series (fixed and random
