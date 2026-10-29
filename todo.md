@@ -24,7 +24,7 @@
   - [x] `../devops/ppi/update-nk800.sh` and `status-nk800.sh`.
   - [ ] run a full conversion (~169 steps, ~10 GB read from THREDDS, ~2.7 GB store) and publish; check time and memory. Don't stress THREDDS.
   - [ ] lat/lon (float64) are stored in both `map.zarr` and `ts.zarr` (~44 MB each): use float32 or one layout only.
-  - [ ] reuse int16 time steps already published in the previous run, to cut the THREDDS load.
+  - [ ] (decided against for now) incremental publish: with `back_hours = 48` only the 24 h before the previous run's reference time are final (past = re-analysed forecasts); the rest of the window is re-generated each run, so reuse saves only ~1/7 of a daily run. It would need `ts` with 24 h time chunks (aligned to UTC days, a point series then reads ~7 shards instead of 1), server-side copies of unchanged shards and a new publish flow. Full re-upload per run for now.
   - [ ] benchmark THREDDS vs x3d for NorKyst, add to the README.
 
 - Data-layer split (see `docs/format.md`, `../x3d-publisher`)
