@@ -1,7 +1,9 @@
 # x3d
 
-xarray backend for the waves.met.no Zarr data store (see `../wave-world`), with a Rust core
+xarray backend for the [waves.met.no](https://github.com/gauteh/waves.met.no) Zarr data store, with a Rust core
 (HTTP range reads, Zarr v3 shard indexes, zstd, hyperslab assembly; GIL released, parallel requests).
+The store format is optimized for both Python access (this package) and wasm/web access (browser clients
+reading the same objects over HTTP).
 
 ```python
 import xarray as xr
@@ -37,7 +39,7 @@ Regenerate (needs network; overwrites the image, then commit it):
     pytest --benchmark-enable --benchmark-only --benchmark-columns=min,median,mean,rounds
 
 The store layout is specified in [docs/format.md](docs/format.md); the producer is
-[x3d-publisher](../x3d-publisher).
+[x3d-publisher](https://github.com/gauteh/x3d-publisher).
 
 ## Develop
 
@@ -53,11 +55,11 @@ Create the conda env from `environment.yml` (Rust, maturin, pytest, xarray, zarr
 
 Tests (`tests/`):
 
-- Synthetic store written with zarr-python (same layout/codecs as wave-world, both shard index locations) under
+- Synthetic store written with zarr-python (same layout/codecs as the published stores, both shard index locations) under
   `tmp`; values are checked against numpy and against zarr-python itself.
 - A local HTTP server with Range support that logs requests: asserts open cost and requests per access pattern.
 - `-m rgw`: integration against the public RGW bucket (`X3D_RGW_URL` overrides; skipped if unreachable).
-- `-m store`: against the local wave-world store (`X3D_TEST_STORE`, default `../wave-world/store/ww3_4km`).
+- `-m store`: against a local store (`X3D_TEST_STORE`, default `store/ww3_4km`), e.g. one built by x3d-publisher.
 - `tests/test_benchmark.py` (marked `rgw`): pytest-benchmark of the same data through up to four backends, one plot panel per dataset (a: ww3_4km `hs`, all four backends; b: NorKyst-800 surface current `u_eastward`, THREDDS `fou-hi/norkystv3_800m_m00_be` at depth 0 (`X3D_THREDDS_NK800_URL`) and x3d on RGW (`X3D_RGW_NK800_URL`)):
   THREDDS OPeNDAP (`X3D_THREDDS_URL`), the NetCDF file on `/lustre` read with netCDF4 (newest
   `ww3_4km_<date>T00Z.nc` below `X3D_LUSTRE_ROOT`, or `X3D_LUSTRE_FILE`), x3d on RGW and x3d on the local store

@@ -21,14 +21,14 @@
   - variables: `u_eastward`, `v_northward`, `temperature`, `Uwind_eastward`, `Vwind_northward`; coordinates `lat`/`lon` (2-D).
   - [x] publisher: model-driven converter (`select`, `back_hours`, dims, lat/lon names), streams int16 batches to a spool, so float32 for the whole run is never in memory; ww3 output unchanged apart from `geo` in `dataset.json`.
   - [x] x3d: grid dims and lat/lon names come from `dataset.json` (`dims`, `geo`); tested with a synthetic Y/X store and a real 3-step NorKyst store.
-  - [x] `../devops/ppi/update-nk800.sh` and `status-nk800.sh`.
+  - [x] update and status scripts for NorKyst-800.
   - [ ] run a full conversion (~169 steps, ~10 GB read from THREDDS, ~2.7 GB store) and publish; check time and memory. Don't stress THREDDS.
   - [ ] lat/lon (float64) are stored in both `map.zarr` and `ts.zarr` (~44 MB each): use float32 or one layout only.
   - [ ] (decided against for now) incremental publish: with `back_hours = 48` only the 24 h before the previous run's reference time are final (past = re-analysed forecasts); the rest of the window is re-generated each run, so reuse saves only ~1/7 of a daily run. It would need `ts` with 24 h time chunks (aligned to UTC days, a point series then reads ~7 shards instead of 1), server-side copies of unchanged shards and a new publish flow. Full re-upload per run for now.
   - [x] benchmark THREDDS vs x3d for NorKyst (surface current, panel b of `docs/thredds_vs_x3d.png`), in the README.
 
 - Data-layer split (see `docs/format.md`, `../x3d-publisher`)
-  - [x] remove the pipeline from wave-world (`pipeline/{convert,publish,fetch,run.sh}`, `Dockerfile.pipeline`, their tests) once `../devops/ppi/update-ww3.sh` calls `x3d-publish run ww3_4km` instead of `$WAVE_WORLD/pipeline/run.sh`; `serve.py` (dev server) stays with wave-world or moves to x3d.
+  - [x] remove the pipeline from wave-world (`pipeline/{convert,publish,fetch,run.sh}`, `Dockerfile.pipeline`, their tests) once the ww3 update script calls `x3d-publish run ww3_4km` instead of `$WAVE_WORLD/pipeline/run.sh`; `serve.py` (dev server) stays with wave-world or moves to x3d.
   - [ ] x3d: check `format_version`. (`dims`/`geo` are read from the metadata; done.)
   - [x] publisher CI: builds a small store and runs x3d's tests against it.
   - [ ] publisher Dockerfile/CronJob.

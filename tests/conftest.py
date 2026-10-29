@@ -1,4 +1,4 @@
-"""Fixtures: a synthetic store with the wave-world layout (Zarr v3, sharded, ts/map/ov), a local
+"""Fixtures: a synthetic store with the x3d layout (Zarr v3, sharded, ts/map/ov), a local
 HTTP server with Range support that counts requests, and the optional real stores."""
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ FILL = -32768
 RGW_URL = os.environ.get(
     "X3D_RGW_URL", "https://rgw.met.no/5e4f32366fc74342866b4c67dbd4713d:waves-ww3/ww3_4km"
 )
-WAVE_WORLD_STORE = Path(os.environ.get("X3D_TEST_STORE", Path(__file__).parents[2] / "wave-world/store/ww3_4km"))
+LOCAL_STORE = Path(os.environ.get("X3D_TEST_STORE", Path(__file__).parents[1] / "store/ww3_4km"))
 
 
 def packed(name: str) -> np.ndarray:
@@ -167,7 +167,7 @@ def rgw_url():
 
 
 @pytest.fixture(scope="session")
-def wave_world_store():
-    if not (WAVE_WORLD_STORE / "latest.json").exists():
-        pytest.skip(f"no wave-world store at {WAVE_WORLD_STORE} (set X3D_TEST_STORE)")
-    return WAVE_WORLD_STORE
+def local_store():
+    if not (LOCAL_STORE / "latest.json").exists():
+        pytest.skip(f"no local store at {LOCAL_STORE} (set X3D_TEST_STORE)")
+    return LOCAL_STORE

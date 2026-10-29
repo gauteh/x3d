@@ -17,7 +17,7 @@ import statistics
 
 import pytest
 
-from conftest import RGW_URL, WAVE_WORLD_STORE
+from conftest import RGW_URL, LOCAL_STORE
 from x3d._core import Array, Store
 from x3d.backend import _arrays, open_run
 
@@ -75,8 +75,8 @@ def test_profile_rgw(rgw_url, scenario):
 
 @pytest.mark.parametrize("scenario", SCENARIOS)
 @pytest.mark.store
-def test_profile_local(wave_world_store, scenario):
+def test_profile_local(local_store, scenario):
     layout, sel = SCENARIOS[scenario]
-    m = profile(str(WAVE_WORLD_STORE), layout, sel)
+    m = profile(str(LOCAL_STORE), layout, sel)
     rows.append((scenario, "local", m))
     assert m["chunks"] > 0 and m["wall"] > 0

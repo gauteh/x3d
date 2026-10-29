@@ -2,7 +2,7 @@
 #   mamba env create -f environment.yml
 #   conda activate x3d
 #   maturin develop --release && pytest
-#   pip install -e ../x3d-publisher --no-deps    # x3d-publish (producer)
+#   git clone https://github.com/gauteh/x3d-publisher && pip install -e x3d-publisher --no-deps   # x3d-publish (producer)
 name: x3d
 channels:
   - conda-forge
@@ -19,7 +19,7 @@ dependencies:
   # benchmark against THREDDS and plot
   - netcdf4
   - matplotlib
-  # ../x3d-publisher: publish to S3, and its tests (mocked S3)
+  # x3d-publisher (https://github.com/gauteh/x3d-publisher): publish to S3, and its tests (mocked S3)
   - boto3
   - moto
   - s3cmd

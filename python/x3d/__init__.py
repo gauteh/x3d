@@ -1,6 +1,6 @@
 """xarray backend for the waves.met.no Zarr data store (``x3d+https://.../ww3_4km``).
 
-The store keeps, per model run, the same data in several layouts (see ``wave-world``):
+The store keeps, per model run, the same data in several layouts (see ``docs/format.md``):
 
 ``ts``   shards ``(all time, 128, 128)``: cheap point time series
 ``map``  one shard per time step: cheap fields

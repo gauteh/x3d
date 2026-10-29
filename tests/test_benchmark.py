@@ -14,7 +14,7 @@ latest run, located in the aggregate by time); the lustre file and the local sto
 amount of data). For the file-based backends only the first round is cold: later rounds hit the OS page cache.
 
 Backends: thredds; lustre (ww3_4km only: netCDF4 on the newest ww3_4km_<date>T00Z.nc below X3D_LUSTRE_ROOT, or
-X3D_LUSTRE_FILE); x3d (RGW); x3d-local (ww3_4km only: x3d+file:// on the wave-world store, X3D_TEST_STORE).
+X3D_LUSTRE_FILE); x3d (RGW); x3d-local (ww3_4km only: x3d+file:// on a local store, X3D_TEST_STORE).
 Unavailable ones are skipped.
 """
 
@@ -30,7 +30,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from conftest import RGW_URL, WAVE_WORLD_STORE
+from conftest import RGW_URL, LOCAL_STORE
 
 pytestmark = pytest.mark.rgw
 
@@ -151,9 +151,9 @@ def open_backend(dataset: str, name: str, window) -> xr.Dataset:
     if name == "x3d":
         return xr.open_dataset(f"x3d+{s['rgw']}")[[s["var"]]].isel(time=slice(0, n))
     if name == "x3d-local":
-        if not (WAVE_WORLD_STORE / "latest.json").exists():
-            pytest.skip(f"no local store at {WAVE_WORLD_STORE} (set X3D_TEST_STORE)")
-        ds = xr.open_dataset(f"x3d+file://{WAVE_WORLD_STORE}")[[s["var"]]]
+        if not (LOCAL_STORE / "latest.json").exists():
+            pytest.skip(f"no local store at {LOCAL_STORE} (set X3D_TEST_STORE)")
+        ds = xr.open_dataset(f"x3d+file://{LOCAL_STORE}")[[s["var"]]]
         if ds.sizes["time"] < 24:
             pytest.skip("local store has fewer than 24 steps")
         return ds.isel(time=slice(0, n))

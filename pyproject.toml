@@ -27,5 +27,5 @@ testpaths = ["tests"]
 addopts = "--benchmark-disable"
 markers = [
   "rgw: needs network access to the public RGW bucket (deselect with -m 'not rgw')",
-  "store: needs a local wave-world store (X3D_TEST_STORE)",
+  "store: needs a local store (X3D_TEST_STORE)",
 ]
