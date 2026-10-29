@@ -6,6 +6,7 @@ xarray backend for the waves.met.no Zarr data store (see `../wave-world`), with 
 ```python
 import xarray as xr
 ds = xr.open_dataset("x3d+https://rgw.met.no/<project>:waves-ww3/ww3_4km")  # the x3d+ prefix selects the engine
+# NorKyst-800 v3 surface layer: "x3d+https://rgw.met.no/<project>:norkyst800m-v3/norkyst800"
 ds.hs.isel(rlat=500, rlon=300).values   # point series: served from ts.zarr
 ds.hs.isel(time=10).values              # field: served from map.zarr
 xr.open_dataset("x3d+https://.../ww3_4km", layout="ov")   # coarse 1/4 grid (block means), lossy
