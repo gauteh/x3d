@@ -1,6 +1,6 @@
 # x3d
 
-xarray backend for the [waves.met.no](https://github.com/gauteh/waves.met.no) Zarr data store, with a Rust core
+xarray backend for the [waves.met.no](https://waves.met.no) Zarr data store, with a Rust core
 (HTTP range reads, Zarr v3 shard indexes, zstd, hyperslab assembly; GIL released, parallel requests).
 The store format is optimized for both Python access (this package) and wasm/web access (browser clients
 reading the same objects over HTTP).
