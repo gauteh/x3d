@@ -13,20 +13,22 @@
 
 ## pipeline
 
-- [ ] eventually we need to decouple the pipeline from wave-world. i think it should live in its own repository. both x3d and wave-world will be users of the produced data (either local or remote/s3).
+- [x] (done: `../x3d-publisher`) eventually we need to decouple the pipeline from wave-world. i think it should live in its own repository. both x3d and wave-world will be users of the produced data (either local or remote/s3).
 
 ## norkyst
-- [ ] NorKyst-800 (prefix `norkyst800` in the bucket, surface layer only):
-  - source: newest `fc` file on THREDDS (`fou-hi/norkyst800m-1h/NorKyst-800m_ZDEPTHS_his.fc.<date>00.nc`, 97 hourly steps, 902x2602, 16 depths; `an` files are 24 steps); the `fc` file is 21 GB, `an` 5.3 GB. Check which date is newest on THREDDS (the catalog listing looked stale).
-  - variables at `depth=0`: `temperature`, `salinity`, `u_eastward`, `v_northward`, `zeta`, `Uwind`, `Vwind`; coordinates `lat`/`lon` (2-D), dims `Y`/`X`.
-  - estimated store: ~1 GB per layout, ~2 GB with `ts` + `map` per run (about 5x a ww3 run).
-  - [ ] wave-world `convert.py`: (now `../x3d-publisher`, model-driven via TOML; add `norkyst800.toml`) make it model-driven (dims, variables, scales, overview variables, shards, lat/lon names, depth selection, source file lookup); keep the ww3 output unchanged and its tests passing.
-  - [ ] pack to int16 while downloading (float32 for the whole run would be ~6 GB).
-  - [ ] x3d: stop assuming `rlat`/`rlon`, `latitude`/`longitude` (`GEO_COORDS`) and the ww3 overview grid; test with a NorKyst-like synthetic store.
-  - [ ] `../devops/ppi/update-nk800.sh` (and `status-nk800.sh`), modelled on `update-ww3.sh`: bucket `waves-ww3`, prefix `norkyst800`, same credentials and cron setup.
+- [x] NorKyst-800 v3 (prefix `norkyst800` in the bucket, surface layer only), model `../x3d-publisher/src/x3d_publisher/models/norkyst800.toml`:
+  - source: THREDDS best aggregate `fou-hi/norkystv3_800m_m00_be` (Y 1148 x X 2747, hourly, `depth=0.0`); window from the newest model run minus `back_hours = 48` to the end of the forecast (~169 steps). The old `norkyst800m-1h` ZDEPTHS files are stale.
+  - variables: `u_eastward`, `v_northward`, `temperature`, `Uwind_eastward`, `Vwind_northward`; coordinates `lat`/`lon` (2-D).
+  - [x] publisher: model-driven converter (`select`, `back_hours`, dims, lat/lon names), streams int16 batches to a spool, so float32 for the whole run is never in memory; ww3 output unchanged apart from `geo` in `dataset.json`.
+  - [x] x3d: grid dims and lat/lon names come from `dataset.json` (`dims`, `geo`); tested with a synthetic Y/X store and a real 3-step NorKyst store.
+  - [x] `../devops/ppi/update-nk800.sh` and `status-nk800.sh`.
+  - [ ] run a full conversion (~169 steps, ~10 GB read from THREDDS, ~2.7 GB store) and publish; check time and memory. Don't stress THREDDS.
+  - [ ] lat/lon (float64) are stored in both `map.zarr` and `ts.zarr` (~44 MB each): use float32 or one layout only.
+  - [ ] reuse int16 time steps already published in the previous run, to cut the THREDDS load.
   - [ ] benchmark THREDDS vs x3d for NorKyst, add to the README.
 
 - Data-layer split (see `docs/format.md`, `../x3d-publisher`)
-  - [ ] remove the pipeline from wave-world (`pipeline/{convert,publish,fetch,run.sh}`, `Dockerfile.pipeline`, their tests) once `../devops/ppi/update-ww3.sh` calls `x3d-publish run ww3_4km` instead of `$WAVE_WORLD/pipeline/run.sh`; `serve.py` (dev server) stays with wave-world or moves to x3d.
-  - [ ] x3d: check `format_version` and read `dims`/layout shapes from the metadata instead of assuming `rlat`/`rlon`.
-  - [ ] publisher CI: build a small store and run x3d's tests against it; Dockerfile/CronJob.
+  - [x] remove the pipeline from wave-world (`pipeline/{convert,publish,fetch,run.sh}`, `Dockerfile.pipeline`, their tests) once `../devops/ppi/update-ww3.sh` calls `x3d-publish run ww3_4km` instead of `$WAVE_WORLD/pipeline/run.sh`; `serve.py` (dev server) stays with wave-world or moves to x3d.
+  - [ ] x3d: check `format_version`. (`dims`/`geo` are read from the metadata; done.)
+  - [x] publisher CI: builds a small store and runs x3d's tests against it.
+  - [ ] publisher Dockerfile/CronJob.
