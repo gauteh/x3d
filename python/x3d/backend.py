@@ -188,6 +188,10 @@ class X3DStore(AbstractDataStore):
         for name, meta in per_layout[layouts[0]].items():
             if name in skip:
                 continue
+            if not meta["shape"]:
+                # a CF grid-mapping (projection) variable: a scalar placeholder, the information is its attributes
+                out[name] = xr.Variable((), np.zeros((), meta["data_type"]), _clean_attrs(meta))
+                continue
             spec = {
                 n: (run.layout_location(n), name, json.dumps(per_layout[n][name]))
                 for n in layouts
@@ -261,6 +265,8 @@ class X3DBackendEntrypoint(BackendEntrypoint):
             decode_timedelta=decode_timedelta,
         )
         ds = ds.set_coords([c for c in r.geo if c in ds])
+        # the projection (CF grid mapping, e.g. "projection_stere") is a coordinate: it describes the grid, not data
+        ds = ds.set_coords([n for n, v in ds.variables.items() if v.ndim == 0 and "grid_mapping_name" in v.attrs])
         ds.encoding["source"] = r.location
         return ds
 

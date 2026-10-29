@@ -60,6 +60,18 @@ Values are `raw * scale_factor` with a float32 scale.
 | `ov_factor`, `ov_tchunk`, `ov_vars` | overview resolution divisor, its time chunk, variables it holds |
 | `scales` | `scale_factor` per variable |
 | `mesh_stride`, `mesh_ny`, `mesh_nx` | `grid.bin` geometry: lon mesh then lat mesh, float32 LE |
+| `crs` | optional: `{grid_mapping, grid_mapping_name, proj4, attrs}`, the source projection (null if the source had none) |
+| `attrs`, `variables` | optional: global attributes, and per-variable attributes, as published |
+| `bbox` | optional: `[lon_min, lat_min, lon_max, lat_max]` |
+
+### Metadata in the Zarr groups
+
+The projection is relayed as a CF grid-mapping variable: a scalar (0-d, no chunk data, no `dimension_names`)
+array in every layout group, named as in the source (`rotated_pole`, `projection_stere`), whose attributes are the
+CF projection parameters (plus `proj4` when the source has it). Data variables keep their `grid_mapping`
+attribute pointing at it. Readers expose it as a coordinate. Source global attributes (title, institution,
+license, ...) and variable attributes (`standard_name`, `long_name`, `units`) are the group/array attributes;
+models may override or drop global attributes.
 
 Layout shapes and chunking are also in each array's own `zarr.json`; readers pick a layout from those
 (the cost model in `x3d.layout`), not from hard-coded values.
