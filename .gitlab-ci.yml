@@ -31,16 +31,24 @@ test:
     - *setup
     - pytest -m "not rgw and not store" -v
 
-# Needs network access to the public RGW bucket (and THREDDS for the benchmark's correctness check);
-# run on schedules or manually so an outage there does not block merges.
+# The README snippets, the public RGW bucket (and THREDDS for the benchmark's correctness check). Fast, so it always
+# runs; an outage there is a warning (allow_failure), not a blocked merge.
 test-rgw:
   stage: test
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
-    - when: manual
-      allow_failure: true
+  allow_failure: true
   script:
     - *apt
     - *setup
     - pip install -q ".[bench]"
     - pytest -m rgw -v
+
+# `pip install "git+<repo>"` as in the README, from this checkout (builds the Rust extension, needs rustup): the
+# backend is registered with xarray and the README snippets run against the installed package.
+test-install:
+  stage: test
+  script:
+    - *apt
+    - python3 -m venv .venv && . .venv/bin/activate
+    - pip install -q pytest "zarr>=3" dask "git+file://$CI_PROJECT_DIR"
+    - python -c "import xarray as xr; assert 'x3d' in xr.backends.list_engines()"
+    - pytest -q tests/test_readme.py
