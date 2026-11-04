@@ -7,10 +7,19 @@ reading the same objects over HTTP).
 
 ## Install
 
+The Rust core is built with [maturin](https://www.maturin.rs) when installing from git, so a Rust toolchain is
+needed. Python >= 3.10; numpy and xarray are installed as dependencies.
+
+With [mamba](https://mamba.readthedocs.io) (creates a new environment with Rust and maturin):
+
+    mamba create -n x3d -c conda-forge python rust maturin pip
+    mamba activate x3d
     pip install "git+https://github.com/gauteh/x3d"
 
-Installing from git builds the Rust core with [maturin](https://www.maturin.rs), so it needs a Rust toolchain
-([rustup](https://rustup.rs)). Python >= 3.10; numpy and xarray are installed as dependencies.
+Or with [rustup](https://rustup.rs), in an existing Python environment:
+
+    pip install maturin
+    pip install "git+https://github.com/gauteh/x3d"
 
 ## Use
 
