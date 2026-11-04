@@ -49,6 +49,6 @@ test-install:
   script:
     - *apt
     - python3 -m venv .venv && . .venv/bin/activate
-    - pip install -q pytest "zarr>=3" dask "git+file://$CI_PROJECT_DIR"
+    - pip install -q pytest pytest-benchmark "zarr>=3" dask "git+file://$CI_PROJECT_DIR"
     - python -c "import xarray as xr; assert 'x3d' in xr.backends.list_engines()"
     - pytest -q tests/test_snippets.py
