@@ -5,6 +5,15 @@ xarray backend for the [waves.met.no](https://waves.met.no) Zarr data store, wit
 The store format is optimized for both Python access (this package) and wasm/web access (browser clients
 reading the same objects over HTTP).
 
+## Install
+
+    pip install "git+https://github.com/gauteh/x3d"
+
+Installing from git builds the Rust core with [maturin](https://www.maturin.rs), so it needs a Rust toolchain
+([rustup](https://rustup.rs)). Python >= 3.10; numpy and xarray are installed as dependencies.
+
+## Use
+
 ```python
 import xarray as xr
 ds = xr.open_dataset("x3d+https://rgw.met.no/<project>:waves-ww3/ww3_4km")  # the x3d+ prefix selects the engine
@@ -15,7 +24,7 @@ xr.open_dataset("x3d+https://.../ww3_4km", layout="ov")   # coarse 1/4 grid (blo
 ```
 
 Opening reads `latest.json`, `dataset.json` and the consolidated metadata of `ts.zarr` / `map.zarr`
-(a few small requests); data is lazy. `data.met.no/ww3_4km` will work the same once the store is served there.
+(a few small requests); data is lazy.
 
 URL: `x3d+<http(s)|file URL or path>[?run=<id>&layout=auto|ts|map|ov]` (kwargs `run=`, `layout=` win).
 The `x3d+` prefix selects the engine; without it (plain path or URL) pass `engine="x3d"`.
