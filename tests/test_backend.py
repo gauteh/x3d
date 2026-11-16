@@ -1,3 +1,4 @@
+import json
 import logging
 import pickle
 
@@ -7,7 +8,7 @@ import xarray as xr
 from xarray.core import indexing
 
 from x3d import layout, url
-from x3d.backend import X3DArray
+from x3d.backend import X3DArray, open_run
 
 from conftest import NT, NX, NY, OVF, RUN, SCALES, packed, reference
 
@@ -232,10 +233,13 @@ def test_rgw_open_and_layouts_agree(rgw_url):
 
 @pytest.mark.rgw
 def test_rgw_overview_is_cheap_and_close_to_full_resolution(rgw_url):
-    ov = xr.open_dataset(f"x3d+{rgw_url}?layout=ov")
-    full = xr.open_dataset(f"x3d+{rgw_url}")
-    assert ov.sizes["rlat"] * OVF >= full.sizes["rlat"] > (ov.sizes["rlat"] - 1) * OVF
-    a, b = ov.hs.isel(time=0).values, full.hs.isel(time=0, rlat=slice(0, None, OVF), rlon=slice(0, None, OVF)).values
+    run = open_run(rgw_url, layouts=("ov",))
+    factor = run.info["ov_factor"]
+    ov = xr.open_dataset(f"x3d+{rgw_url}", run=run.run, layout="ov")
+    full = xr.open_dataset(f"x3d+{rgw_url}", run=run.run)
+    for dim in run.grid_dims:
+        assert ov.sizes[dim] * factor >= full.sizes[dim] > (ov.sizes[dim] - 1) * factor
+    a, b = ov.hs.isel(time=0).values, full.hs.isel(time=0, **{d: slice(0, None, factor) for d in run.grid_dims}).values
     both = np.isfinite(a) & np.isfinite(b)
     assert both.any() and abs(np.mean(a[both]) - np.mean(b[both])) < 0.5
 
@@ -252,3 +256,33 @@ def test_local_store_matches_zarr_python(local_store):
         dict(time=slice(nt - 12, 3, -7), rlat=slice(ny * 7 // 8, ny // 10, -37), rlon=slice(5, nx * 19 // 20, 11)),
     ):
         np.testing.assert_allclose(ds.hs.isel(sel).values, ref.hs.isel(sel).values.astype("float32"), rtol=1e-6, equal_nan=True)
+
+
+def test_track_store_layout_is_detected(tmp_path):
+    """An along-track store (kind=track in latest.json): one 1-D time series, no layout to choose."""
+    import zarr
+    from zarr.codecs import BytesCodec, ZstdCodec
+
+    n, root = 100, tmp_path / "trk"
+    g = zarr.open_group(root / "track" / "track.zarr", mode="w", zarr_format=3)
+    g.attrs.update({"title": "tracks", "featureType": "trajectory"})
+    t = 1_800_000_000 + np.arange(n) * 7
+    kw = dict(chunks=(64,), compressors=(ZstdCodec(),))
+    g.create_array("time", data=t, dimension_names=("time",), attributes={"units": "seconds since 1970-01-01"}, **kw)
+    for name, scale, dtype, fill in (("latitude", 1e-6, "int32", -2**31), ("longitude", 1e-6, "int32", -2**31), ("hs", 0.001, "int16", -32768)):
+        raw = (np.arange(n) * (50_000 if dtype == "int32" else 10)).astype(dtype)
+        raw[3] = fill
+        g.create_array(name, data=raw, fill_value=fill, dimension_names=("time",), attributes={
+            "scale_factor": scale, "_FillValue": fill, "units": "m" if name == "hs" else "degrees"}, **kw)
+    zarr.consolidate_metadata(root / "track" / "track.zarr")
+    (root / "track" / "dataset.json").write_text(json.dumps({"kind": "track", "geo": ["latitude", "longitude"], "n": n}))
+    (root / "latest.json").write_text(json.dumps({"run": "track", "kind": "track"}))
+
+    for url in (f"x3d+file://{root}", f"x3d+file://{root}?run=track"):  # latest.json, or a pinned run
+        ds = xr.open_dataset(url)
+        assert ds.sizes == {"time": n} and ds.attrs["x3d_layout"] == "track" and ds.attrs["title"] == "tracks"
+        assert {"latitude", "longitude"} <= set(ds.coords)
+        assert ds.time.values[0] == np.datetime64(1_800_000_000, "s") and ds.hs.attrs["units"] == "m"
+        np.testing.assert_allclose(ds.latitude.values[[0, 4]], [0, 0.2], atol=1e-9)  # 1e-6 scale keeps float64 precision
+        assert np.isnan(ds.hs.values[3]) and ds.hs.dtype == "float32"
+        np.testing.assert_allclose(ds.hs.isel(time=slice(60, 70)).values, np.arange(60, 70) * 0.01, atol=1e-6)

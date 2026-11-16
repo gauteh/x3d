@@ -67,12 +67,21 @@ def open_run(root: str, run: str | None = None, layouts=EXACT_LAYOUTS) -> Run:
     and the consolidated metadata of each layout; a handful of small requests, made concurrently."""
     root_store = Store(root)
     if run is None:
-        run = str(_get_json(root_store, "latest.json")["run"])
+        latest = _get_json(root_store, "latest.json")
+        run = str(latest["run"])
+        if latest.get("kind") == "track":
+            layouts = ("track",)
     rs = root_store.child(run)
     with ThreadPoolExecutor(len(layouts) + 1) as ex:
         info = ex.submit(_get_json, rs, "dataset.json")
         metas = {name: ex.submit(_get_json, rs, f"{name}.zarr/zarr.json") for name in layouts}
-        return Run(root, run, info.result(), {n: f.result() for n, f in metas.items()})
+        try:
+            return Run(root, run, info.result(), {n: f.result() for n, f in metas.items()})
+        except FileNotFoundError:
+            # a track store (pinned run, so latest.json was not read): its one layout is track.zarr
+            if layouts != ("track",) and info.result().get("kind") == "track":
+                return open_run(root, run, ("track",))
+            raise
 
 
 def _arrays(meta: dict) -> dict[str, dict]:
@@ -89,7 +98,8 @@ def _clean_attrs(meta: dict) -> dict:
     if not isinstance(attrs.get("_FillValue", 0), (int, float)):
         del attrs["_FillValue"]
     # A float32 scale makes xarray decode int16 to float32 instead of float64: half the memory and bytes moved.
-    if "scale_factor" in attrs:
+    # (not for int32: coordinates like latitude with a 1e-6 scale need the precision)
+    if "scale_factor" in attrs and meta.get("data_type") == "int16":
         attrs["scale_factor"] = np.float32(attrs["scale_factor"])
     return attrs
 
@@ -167,17 +177,22 @@ class X3DStore(AbstractDataStore):
         return {d: n for v in self.get_variables().values() for d, n in zip(v.dims, v.shape)}
 
     def get_attrs(self):
-        base = self.run.metas["ov" if self.mode == "ov" else "ts"].get("attributes", {})
+        base = self.run.metas["ov" if self.mode == "ov" else "track" if self.mode == "track" else "ts"].get("attributes", {})
         attrs = dict(base)
         attrs.update(x3d_run=self.run.run, x3d_model_run=self.run.info.get("model_run", ""), x3d_layout=self.mode)
         return FrozenDict(attrs)
 
     def get_variables(self):
         run = self.run
-        times = np.array([t.rstrip("Z") for t in run.info["times"]], dtype="datetime64[ns]")
-        out = {"time": xr.Variable(("time",), times, {"standard_name": "time"})}
+        out = {}
+        if self.mode != "track":  # a track store has an irregular time axis: an array like the others
+            times = np.array([t.rstrip("Z") for t in run.info["times"]], dtype="datetime64[ns]")
+            out["time"] = xr.Variable(("time",), times, {"standard_name": "time"})
 
-        if self.mode == "ov":
+        if self.mode == "track":
+            layouts = ("track",)
+            skip = set()
+        elif self.mode == "ov":
             layouts = ("ov",)
             skip = {"time", *run.geo}
         else:
@@ -258,6 +273,8 @@ class X3DBackendEntrypoint(BackendEntrypoint):
         # ts always: its metadata carries the global attributes and, for the overview, the fine coordinates
         needed = ("ts", *{"auto": ("map",), "map": ("map",), "ov": ("ov",), "ts": ()}[mode])
         r = open_run(root, run or opts.get("run"), needed)
+        if "track" in r.metas:  # along-track time series: the layout is detected, there is only one
+            mode = "track"
         ds = StoreBackendEntrypoint().open_dataset(
             X3DStore(r, mode, mask_and_scale=mask_and_scale),
             mask_and_scale=mask_and_scale, decode_times=decode_times, concat_characters=concat_characters,

@@ -32,6 +32,8 @@ ds.hs.isel(time=10).values              # field: served from map.zarr
 xr.open_dataset("x3d+https://rgw.met.no/5e4f32366fc74342866b4c67dbd4713d:waves-ww3/ww3_4km", layout="ov")   # coarse 1/8 grid (block means), lossy
 ```
 
+Stores with `kind: track` in `latest.json` (altimeter along-track series, 1-D on `time`) are detected automatically; no layout choice applies.
+
 Opening reads `latest.json`, `dataset.json` and the consolidated metadata of `ts.zarr` / `map.zarr`
 (a few small requests); data is lazy.
 
