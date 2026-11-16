@@ -167,11 +167,12 @@ class X3DArray(BackendArray):
 
 
 class X3DStore(AbstractDataStore):
-    def __init__(self, run: Run, mode: str, ov: dict | None = None, mask_and_scale: bool = True):
+    def __init__(self, run: Run, mode: str, ov: dict | None = None, mask_and_scale: bool = True, decode_times: bool = True):
         self.run = run
         self.mode = mode
         self._ov = ov
         self.mask_and_scale = mask_and_scale
+        self.decode_times = decode_times
 
     def get_dimensions(self):
         return {d: n for v in self.get_variables().values() for d, n in zip(v.dims, v.shape)}
@@ -222,6 +223,8 @@ class X3DStore(AbstractDataStore):
                     unpack["fill_value"] = encoding["_FillValue"] = int(attrs.pop("_FillValue"))
             var = xr.Variable(dims, indexing.LazilyIndexedArray(X3DArray(spec, meta["shape"], meta["data_type"], unpack)), attrs, encoding)
             var.encoding["preferred_chunks"] = {d: min(c, s) for d, c, s in zip(dims, meta["chunk_grid"]["configuration"]["chunk_shape"], meta["shape"])}
+            if self.mode == "track" and name == "time" and self.decode_times and attrs.get("units") == "seconds since 1970-01-01":
+                var = _decode_epoch_seconds(var, spec["track"])
             out[name] = var
 
         if self.mode == "ov":
@@ -233,6 +236,22 @@ class X3DStore(AbstractDataStore):
 
     def close(self):
         pass
+
+
+def _decode_epoch_seconds(var: xr.Variable, spec: tuple[str, str, str], step: int = 1 << 24) -> xr.Variable:
+    """The time axis of a track store as datetime64[ns], read and converted ``step`` samples at a time. The axis is the
+    index of the dataset, so xarray loads it on open anyway; its CF decoding would make a few temporary copies of it
+    (about 4x the final size for a 76M sample series)."""
+    loc, path, meta = spec
+    arr = Array(Store(loc), path, meta)
+    n = var.shape[0]
+    out = np.empty(n, "datetime64[ns]")
+    ns = out.view("int64")
+    for a in range(0, n, step):
+        b = min(n, a + step)
+        ns[a:b] = arr.read_raw([(a, b, 1)]).view("<i8") * 1_000_000_000
+    attrs = {k: v for k, v in var.attrs.items() if k not in ("units", "calendar")}
+    return xr.Variable(var.dims, out, attrs, {"units": "seconds since 1970-01-01", "calendar": "proleptic_gregorian", "dtype": np.dtype("int64")})
 
 
 def _read_coord(run: Run, name: str) -> np.ndarray:
@@ -276,7 +295,7 @@ class X3DBackendEntrypoint(BackendEntrypoint):
         if "track" in r.metas:  # along-track time series: the layout is detected, there is only one
             mode = "track"
         ds = StoreBackendEntrypoint().open_dataset(
-            X3DStore(r, mode, mask_and_scale=mask_and_scale),
+            X3DStore(r, mode, mask_and_scale=mask_and_scale, decode_times=decode_times),
             mask_and_scale=mask_and_scale, decode_times=decode_times, concat_characters=concat_characters,
             decode_coords=decode_coords, drop_variables=drop_variables, use_cftime=use_cftime,
             decode_timedelta=decode_timedelta,
