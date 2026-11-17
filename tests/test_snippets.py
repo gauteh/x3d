@@ -4,8 +4,8 @@ import xarray as xr
 
 pytestmark = pytest.mark.rgw
 
-WW3 = "https://rgw.met.no/5e4f32366fc74342866b4c67dbd4713d:waves-ww3/ww3_4km"
-NORKYST = "https://rgw.met.no/5e4f32366fc74342866b4c67dbd4713d:norkyst800m-v3/norkyst800"
+WW3 = "https://rgw.met.no/079d3efebae2494db2a13c49766989ab:waves-ww3/ww3_4km"
+NORKYST = "https://rgw.met.no/079d3efebae2494db2a13c49766989ab:norkyst800m-v3/norkyst800"
 
 
 def test_readme_usage(rgw_url):

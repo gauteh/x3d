@@ -25,11 +25,11 @@ Or with [rustup](https://rustup.rs), in an existing Python environment:
 
 ```python
 import xarray as xr
-ds = xr.open_dataset("x3d+https://rgw.met.no/5e4f32366fc74342866b4c67dbd4713d:waves-ww3/ww3_4km")  # the x3d+ prefix selects the engine
-# NorKyst-800 v3 surface layer: "x3d+https://rgw.met.no/5e4f32366fc74342866b4c67dbd4713d:norkyst800m-v3/norkyst800"
+ds = xr.open_dataset("x3d+https://rgw.met.no/079d3efebae2494db2a13c49766989ab:waves-ww3/ww3_4km")  # the x3d+ prefix selects the engine
+# NorKyst-800 v3 surface layer: "x3d+https://rgw.met.no/079d3efebae2494db2a13c49766989ab:norkyst800m-v3/norkyst800"
 ds.hs.isel(rlat=500, rlon=300).values   # point series: served from ts.zarr
 ds.hs.isel(time=10).values              # field: served from map.zarr
-xr.open_dataset("x3d+https://rgw.met.no/5e4f32366fc74342866b4c67dbd4713d:waves-ww3/ww3_4km", layout="ov")   # coarse 1/8 grid (block means), lossy
+xr.open_dataset("x3d+https://rgw.met.no/079d3efebae2494db2a13c49766989ab:waves-ww3/ww3_4km", layout="ov")   # coarse 1/8 grid (block means), lossy
 ```
 
 Stores with `kind: track` in `latest.json` (altimeter along-track series, 1-D on `time`) are detected automatically; no layout choice applies.

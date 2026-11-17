@@ -36,7 +36,7 @@ pytestmark = pytest.mark.rgw
 
 THREDDS_URL = os.environ.get("X3D_THREDDS_URL", "https://thredds.met.no/thredds/dodsC/ww3_4km_agg")
 NK800_URL = os.environ.get(
-    "X3D_RGW_NK800_URL", "https://rgw.met.no/5e4f32366fc74342866b4c67dbd4713d:norkyst800m-v3/norkyst800"
+    "X3D_RGW_NK800_URL", "https://rgw.met.no/079d3efebae2494db2a13c49766989ab:norkyst800m-v3/norkyst800"
 )
 NK800_THREDDS_URL = os.environ.get(
     "X3D_THREDDS_NK800_URL", "https://thredds.met.no/thredds/dodsC/fou-hi/norkystv3_800m_m00_be"

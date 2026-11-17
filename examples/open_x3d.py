@@ -5,7 +5,7 @@ Needs xarray and x3d (https://github.com/gauteh/x3d).
 import xarray as xr
 
 # the "x3d+" prefix selects the engine; data is lazy, only what is read is downloaded
-ds = xr.open_dataset("x3d+https://rgw.met.no/5e4f32366fc74342866b4c67dbd4713d:waves-ww3/ww3_4km")
+ds = xr.open_dataset("x3d+https://rgw.met.no/079d3efebae2494db2a13c49766989ab:waves-ww3/ww3_4km")
 print(ds)
 
 # significant wave height [m] at one grid point, all forecast hours

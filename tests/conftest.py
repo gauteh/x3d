@@ -22,7 +22,7 @@ RUN = "20260101T000000Z"
 SCALES = {"hs": 0.01, "tp": 0.1}
 FILL = -32768
 RGW_URL = os.environ.get(
-    "X3D_RGW_URL", "https://rgw.met.no/5e4f32366fc74342866b4c67dbd4713d:waves-ww3/ww3_4km"
+    "X3D_RGW_URL", "https://rgw.met.no/079d3efebae2494db2a13c49766989ab:waves-ww3/ww3_4km"
 )
 LOCAL_STORE = Path(os.environ.get("X3D_TEST_STORE", Path(__file__).parents[1] / "store/ww3_4km"))
 
