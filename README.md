@@ -47,7 +47,7 @@ The `x3d+` prefix selects the engine; without it (plain path or URL) pass `engin
 - Absent shards/chunks (land) read as fill without data transfer.
 
 Prototype limits / next steps: only the latest run (no best-forecast aggregate across runs yet); no write
-support; only the codecs the pipeline writes (`sharding_indexed`, `bytes`, `zstd`, `crc32c`); no read coalescing,
+support; only the codecs the pipeline writes (`sharding_indexed`, `bytes`, `zstd`, `crc32c`, `numcodecs.delta` on integers); no read coalescing,
 caching of decoded chunks or overview-to-field refinement.
 
 ## Benchmark: THREDDS vs x3d

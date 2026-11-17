@@ -1,5 +1,5 @@
-//! Zarr v3 array reader: regular chunk grid, `bytes` (little endian) + optional `zstd`,
-//! and `sharding_indexed` (with `crc32c`-protected index). Reads strided hyperslabs.
+//! Zarr v3 array reader: regular chunk grid, `bytes` (little endian) + optional `zstd` (and `numcodecs.delta` before
+//! `bytes`, for integers), and `sharding_indexed` (with `crc32c`-protected index). Reads strided hyperslabs.
 
 use crate::error::{Error, Result};
 use crate::store::{ByteRange, Store};
@@ -59,6 +59,8 @@ fn touched(s: &Slice, chunk: u64) -> Vec<u64> {
 #[derive(Debug, Clone)]
 struct Codecs {
     zstd: bool,
+    /// `numcodecs.delta` on integers: each chunk holds its first value and then the differences (wrapping).
+    delta: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -169,10 +171,10 @@ impl Meta {
                     "end" => false,
                     l => return Err(Error::Unsupported(format!("index_location {l}"))),
                 };
-                let inner_codecs = parse_codecs(cfg["codecs"].as_array().ok_or_else(|| bad("inner codecs"))?)?;
+                let inner_codecs = parse_codecs(cfg["codecs"].as_array().ok_or_else(|| bad("inner codecs"))?, &dtype)?;
                 (Layout::Sharded { inner, index_at_start: at_start }, inner_codecs)
             }
-            _ => (Layout::Plain, parse_codecs(codecs)?),
+            _ => (Layout::Plain, parse_codecs(codecs, &dtype)?),
         };
         Ok(Meta { shape, chunks, dtype, itemsize, fill, codecs, layout })
     }
@@ -186,17 +188,62 @@ impl Meta {
     }
 }
 
-fn parse_codecs(list: &[Value]) -> Result<Codecs> {
-    let names: Vec<_> = list.iter().map(|c| c["name"].as_str().unwrap_or("")).collect();
+/// `i8`/`<i8`/`int64` -> `int64` (the integer types only).
+fn int_name(dt: &str) -> Option<&'static str> {
+    Some(match dt.trim_start_matches(['<', '|', '=']) {
+        "i1" | "int8" => "int8",
+        "i2" | "int16" => "int16",
+        "i4" | "int32" => "int32",
+        "i8" | "int64" => "int64",
+        "u1" | "uint8" => "uint8",
+        "u2" | "uint16" => "uint16",
+        "u4" | "uint32" => "uint32",
+        "u8" | "uint64" => "uint64",
+        _ => return None,
+    })
+}
+
+fn parse_codecs(list: &[Value], dtype: &str) -> Result<Codecs> {
+    let (delta, rest) = match list.first() {
+        Some(c) if c["name"] == "numcodecs.delta" => {
+            let cfg = &c["configuration"];
+            let ok = |k: &str| cfg[k].as_str().map_or(true, |d| int_name(d).is_some() && int_name(d) == int_name(dtype));
+            if int_name(dtype).is_none() || !ok("dtype") || !ok("astype") {
+                return Err(Error::Unsupported(format!("numcodecs.delta on {dtype} (integers of the array's type only): {cfg}")));
+            }
+            (true, &list[1..])
+        }
+        _ => (false, list),
+    };
+    let names: Vec<_> = rest.iter().map(|c| c["name"].as_str().unwrap_or("")).collect();
     match names.as_slice() {
         ["bytes"] | ["bytes", "zstd"] => {}
-        _ => return Err(Error::Unsupported(format!("codecs {names:?}"))),
+        _ => return Err(Error::Unsupported(format!("codecs {:?}", list.iter().map(|c| c["name"].as_str().unwrap_or("")).collect::<Vec<_>>()))),
     }
-    let endian = list[0]["configuration"]["endian"].as_str().unwrap_or("little");
+    let endian = rest[0]["configuration"]["endian"].as_str().unwrap_or("little");
     if endian != "little" {
         return Err(Error::Unsupported("big endian".into()));
     }
-    Ok(Codecs { zstd: names.len() == 2 })
+    Ok(Codecs { zstd: names.len() == 2, delta })
+}
+
+/// Undo `numcodecs.delta` in place: running sum of little-endian integers of `isz` bytes (wrapping, like numpy).
+fn undelta(data: &mut [u8], isz: usize) {
+    macro_rules! run {
+        ($t:ty) => {{
+            let mut acc: $t = 0;
+            for c in data.chunks_exact_mut(std::mem::size_of::<$t>()) {
+                acc = acc.wrapping_add(<$t>::from_le_bytes((&*c).try_into().unwrap()));
+                c.copy_from_slice(&acc.to_le_bytes());
+            }
+        }};
+    }
+    match isz {
+        1 => run!(u8),
+        2 => run!(u16),
+        4 => run!(u32),
+        _ => run!(u64),
+    }
 }
 
 type Index = Option<Arc<Vec<(u64, u64)>>>;
@@ -404,13 +451,16 @@ impl Array {
         prof.chunks.fetch_add(1, Relaxed);
         let t = Instant::now();
         let expect = self.meta.leaf_shape().iter().product::<u64>() as usize * self.meta.itemsize;
-        let data = if self.meta.codecs.zstd {
+        let mut data = if self.meta.codecs.zstd {
             zstd::bulk::decompress(&raw, expect).map_err(|e| Error::Corrupt(format!("{}: {e}", leaf.key)))?
         } else {
             raw
         };
         if data.len() != expect {
             return Err(Error::Corrupt(format!("{}: chunk is {} bytes, expected {expect}", leaf.key, data.len())));
+        }
+        if self.meta.codecs.delta {
+            undelta(&mut data, self.meta.itemsize);
         }
         let data = match &self.decode {
             Some(d) => d.apply(&data),
@@ -626,6 +676,47 @@ mod tests {
             // a single point
             assert_eq!(as_i16(&a.read(&[sl(3, 4, 1), sl(4, 5, 1)]).unwrap()), vec![22]);
         }
+    }
+
+    /// 1-D int32 array in two chunks of 4 (the last one partial: padded), delta-coded per chunk, with and without zstd.
+    #[test]
+    fn delta_codec_is_undone_per_chunk_and_wraps() {
+        let data: Vec<i32> = vec![5, 6, 8, i32::MIN, 100, i32::MAX, -7];
+        for zstd in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(dir.path().join("a/c")).unwrap();
+            for (k, ch) in data.chunks(4).enumerate() {
+                let mut ch = ch.to_vec();
+                ch.resize(4, 0);
+                let mut raw = vec![];
+                for (i, v) in ch.iter().enumerate() {
+                    raw.extend((if i == 0 { *v } else { v.wrapping_sub(ch[i - 1]) }).to_le_bytes());
+                }
+                let obj = if zstd { zstd::bulk::compress(&raw, 1).unwrap() } else { raw };
+                std::fs::write(dir.path().join(format!("a/c/{k}")), obj).unwrap();
+            }
+            let tail = if zstd { r#",{"name":"zstd","configuration":{"level":1}}"# } else { "" };
+            let meta = format!(
+                r#"{{"zarr_format":3,"node_type":"array","shape":[7],"data_type":"int32","fill_value":0,
+                "chunk_grid":{{"name":"regular","configuration":{{"chunk_shape":[4]}}}},
+                "chunk_key_encoding":{{"name":"default","configuration":{{"separator":"/"}}}},
+                "codecs":[{{"name":"numcodecs.delta","configuration":{{"dtype":"int32"}}}},{{"name":"bytes","configuration":{{"endian":"little"}}}}{tail}]}}"#
+            );
+            let a = Array::new(Store::open(dir.path().to_str().unwrap()), "a", Meta::parse(&meta).unwrap());
+            let got: Vec<i32> = a.read(&[sl(0, 7, 1)]).unwrap().chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect();
+            assert_eq!(got, data);
+            let some: Vec<i32> = a.read(&[sl(3, 6, 1)]).unwrap().chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect();
+            assert_eq!(some, &data[3..6]);
+        }
+    }
+
+    #[test]
+    fn delta_needs_the_arrays_integer_type() {
+        let cfg = |dt: &str| serde_json::json!([{"name": "numcodecs.delta", "configuration": {"dtype": dt}}, {"name": "bytes"}]);
+        let list = |dt: &str| cfg(dt).as_array().unwrap().clone();
+        assert!(parse_codecs(&list("<i4"), "int32").unwrap().delta);
+        assert!(parse_codecs(&list("int64"), "int32").is_err());
+        assert!(parse_codecs(&list("float32"), "float32").is_err());
     }
 
     #[test]

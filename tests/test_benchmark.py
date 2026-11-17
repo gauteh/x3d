@@ -246,7 +246,9 @@ def test_lustre_and_x3d_agree(rgw_url):
     ref = np.datetime64(x.attrs["x3d_model_run"].rstrip("Z"), "ns")
     if nc["forecast_reference_time"].values != ref:
         pytest.skip(f"store is from model run {ref}, {f.name} from {nc['forecast_reference_time'].values}")
-    common = np.intersect1d(nc.time.values, x.time.values)[:24]
+    # before the model run the store holds the steps of the earlier runs (an aggregate), the file its own: not comparable
+    common = np.intersect1d(nc.time.values, x.time.values)
+    common = common[common >= ref][:24]
     assert len(common) == 24
     box = {"rlat": DATASETS["ww3_4km"]["box"][0], "rlon": DATASETS["ww3_4km"]["box"][1]}
     a = nc.hs.sel(time=common).isel(**box).values

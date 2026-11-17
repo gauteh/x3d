@@ -80,7 +80,7 @@ Layout shapes and chunking are also in each array's own `zarr.json`; readers pic
 
 Along-track satellite series. `latest.json` is `{"run": "track", "kind": "track"}`; `track/dataset.json` and
 `track/track.zarr` hold a plain 1-D Zarr v3 series on `time` (unsharded `bytes`+`zstd` chunks of `chunk` samples, `time` of the larger `time_chunk`, because it is read in full on open;
-int16 + scale variables, int32 + 1e-6 lat/lon). `dataset.json` has `n`, `chunk`, `time_chunk`, `tmin`, `tmax`, `bbox` and
+int16 + scale variables, int32 + 1e-6 lat/lon). `time`, `latitude` and `longitude` are `numcodecs.delta`-coded first (listed in `delta`; per chunk the first value, then wrapping differences), which makes them ~10-30x smaller. `dataset.json` has `n`, `chunk`, `time_chunk`, `tmin`, `tmax`, `bbox` and
 `windows[{start,version,n,offset}]`. Objects are rewritten in place (short `max-age`, model key `cache_seconds`): each update replaces only the
 tail chunks (last `tail_windows` windows) and then `zarr.json`, `dataset.json`, `latest.json`. Readers detect the
 layout from `kind`; no `ts`/`map`/`ov`.
